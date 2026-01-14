@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distribuidora Allana - Tienda de Pedidos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap');
+        body { font-family: 'Roboto', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        @keyframes bounce-x { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-15px); } }
+        .animate-bounce-x { animation: bounce-x 1s infinite; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const SUPABASE_URL = "https://ejbqlejlgprvwzrptojo.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqYnFsZWpsZ3Bydnd6cnB0b2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMjkwMjIsImV4cCI6MjA3MjYwNTAyMn0.9fVItJka0MN3nlfowVudIE0AuNmfTJGQcbbqpau2Th8";
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const NO_IMAGE = "https://via.placeholder.com/150";
+        const LOGO_URL = "https://ejbqlejlgprvwzrptojo.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
+
+        function TarjetaProducto({ producto, onAdd, carrito, onOpenImage }) {
+            const [cantidad, setCantidad] = useState(1);
+            const itemEnCarrito = carrito.find(i => i.id === producto.id);
+            const disponible = (producto.stock || 0) - (itemEnCarrito ? itemEnCarrito.cantidad : 0);
+            const imgURL = producto.imagen ? `${SUPABASE_URL}/storage/v1/object/public/promo_images/${producto.imagen}` : NO_IMAGE;
+
+            return (
+                <div className={`bg-white rounded-2xl shadow-sm border p-4 flex flex-col h-full transition-all ${disponible <= 0 ? 'opacity-60' : 'hover:shadow-md'}`}>
+                    <div className="flex justify-between mb-2">
+                        <span className={`text-[10px] font-black px-2 py-1 rounded ${disponible > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>STOCK: {producto.stock || 0}</span>
+                    </div>
+                    <div className="w-full h-32 flex items-center justify-center mb-3 cursor-zoom-in" onClick={() => onOpenImage(imgURL, producto.nombre)}>
+                        <img src={imgURL} className="max-h-full object-contain" alt={producto.nombre} onError={(e) => e.target.src = NO_IMAGE} />
+                    </div>
+                    <h3 className="text-xs font-bold uppercase h-10 overflow-hidden text-gray-700 leading-tight mb-2">{producto.nombre}</h3>
+                    <div className="mb-4 mt-auto">
+                        <p className="text-blue-900 font-black text-2xl tracking-tighter">$ {producto.precio.toFixed(2)}</p>
+                    </div>
+                    <div className="space-y-2">
+                        {disponible > 0 ? (
+                            <>
+                                <div className="flex items-center justify-between bg-gray-100 rounded-xl p-1 border">
+                                    <button onClick={() => cantidad > 1 && setCantidad(cantidad - 1)} className="w-8 h-8 bg-white rounded-lg shadow font-black text-blue-900">-</button>
+                                    <span className="font-bold text-sm">{cantidad}</span>
+                                    <button onClick={() => cantidad < disponible && setCantidad(cantidad + 1)} className="w-8 h-8 bg-white rounded-lg shadow font-black text-blue-900">+</button>
+                                </div>
+                                <button onClick={() => { onAdd(producto, cantidad); setCantidad(1); }} className="w-full bg-blue-900 text-white py-3 rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition">Añadir</button>
+                            </>
+                        ) : <button disabled className="w-full bg-gray-200 text-gray-400 py-3 rounded-xl text-[11px] font-black uppercase">Sin Stock</button>}
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            const [cliente, setCliente] = useState(null);
+            const [localidades, setLocalidades] = useState([]);
+            const [productos, setProductos] = useState([]);
+            const [categorias, setCategorias] = useState([]);
+            const [carrito, setCarrito] = useState([]);
+            const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+            const [busqueda, setBusqueda] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [showWelcome, setShowWelcome] = useState(false);
+            const [zoomImage, setZoomImage] = useState(null);
+            
+            // Estados para recuperación de pedidos
+            const [pedidoPendiente, setPedidoPendiente] = useState(null);
+            const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+
+            useEffect(() => {
+                const session = localStorage.getItem('distribuidora_session');
+                if (session) setCliente(JSON.parse(session));
+                fetchData();
+            }, []);
+
+            async function fetchData() {
+                const { data: locs } = await sb.from('localidades').select('*').order('nombre');
+                const { data: cats } = await sb.from('categorias').select('*').order('nombre');
+                const { data: prods } = await sb.from('promociones').select('*').order('nombre');
+                if (locs) setLocalidades(locs);
+                if (cats) setCategorias(cats);
+                if (prods) setProductos(prods);
+                setLoading(false);
+            }
+
+            const filtrados = useMemo(() => {
+                if (!categoriaFiltro && !busqueda) return [];
+                return productos.filter(p => {
+                    const cat = categorias.find(c => c.id === p.categoria_id);
+                    const matchCat = categoriaFiltro === 'TODOS' || (cat && cat.nombre === categoriaFiltro);
+                    const matchBus = p.nombre?.toLowerCase().includes(busqueda.toLowerCase());
+                    return busqueda ? matchBus : matchCat;
+                });
+            }, [productos, categorias, categoriaFiltro, busqueda]);
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const dni = formData.get('dni');
+                const nombre = formData.get('nombre');
+                const selectEl = e.target.elements.localidad;
+                const loc_id = selectEl.value;
+                const loc_nombre = selectEl.options[selectEl.selectedIndex].text;
+
+                const datosCliente = { nombre, dni, localidad_id: loc_id, localidad_nombre: loc_nombre };
+
+                // Buscar pedido pendiente en Supabase
+                const { data: pedidoExistente } = await sb
+                    .from('pedidos')
+                    .select('*')
+                    .eq('dni', dni)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (pedidoExistente) {
+                    setPedidoPendiente(pedidoExistente);
+                    setCliente(datosCliente); // Guardamos datos pero mostramos modal antes
+                    setShowRecoveryModal(true);
+                } else {
+                    finalizarLogin(datosCliente);
+                }
+            };
+
+            const finalizarLogin = (datos) => {
+                setCliente(datos);
+                localStorage.setItem('distribuidora_session', JSON.stringify(datos));
+                setShowWelcome(true);
+            };
+
+            const recuperarPedido = () => {
+                if (pedidoPendiente && pedidoPendiente.productos) {
+                    setCarrito(pedidoPendiente.productos);
+                }
+                localStorage.setItem('distribuidora_session', JSON.stringify(cliente));
+                setShowRecoveryModal(false);
+                setShowWelcome(true);
+            };
+
+            const agregarAlCarrito = (prod, cant) => {
+                setCarrito(prev => {
+                    const existe = prev.find(i => i.id === prod.id);
+                    if (existe) return prev.map(i => i.id === prod.id ? { ...i, cantidad: i.cantidad + cant } : i);
+                    return [...prev, { ...prod, cantidad: cant }];
+                });
+            };
+
+            async function enviarPedido() {
+                if (carrito.length === 0) return;
+                const total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
+
+                const { error } = await sb.from('pedidos').insert([{
+                    cliente: cliente.nombre,
+                    dni: cliente.dni,
+                    localidad_id: parseInt(cliente.localidad_id),
+                    productos: carrito,
+                    total: total
+                }]);
+
+                if (error) alert("Error: " + error.message);
+                else {
+                    alert("¡Pedido enviado con éxito!");
+                    setCarrito([]);
+                }
+            }
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse uppercase">Cargando Distribuidora Allana...</div>;
+
+            // PANTALLA DE LOGIN
+            if (!cliente || showRecoveryModal) {
+                if (showRecoveryModal) {
+                    return (
+                        <div className="min-h-screen flex items-center justify-center p-4 bg-blue-900">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center">
+                                <div className="text-5xl mb-4">📦</div>
+                                <h2 className="text-2xl font-black text-blue-900 uppercase mb-2">¡Pedido Encontrado!</h2>
+                                <p className="text-gray-500 mb-6 font-medium">Hola {cliente.nombre}, detectamos que tienes un pedido anterior. ¿Deseas recuperarlo para modificarlo?</p>
+                                <div className="space-y-3">
+                                    <button onClick={recuperarPedido} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition">Sí, recuperar pedido</button>
+                                    <button onClick={() => { setShowRecoveryModal(false); setShowWelcome(true); localStorage.setItem('distribuidora_session', JSON.stringify(cliente)); }} className="w-full bg-gray-100 text-gray-500 py-4 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition">No, empezar uno nuevo16:13 14/1/202616:13 14/1/2026</button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 bg-blue-900">
+                        <form onSubmit={handleLogin} className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm flex flex-col items-center">
+                            <img src={LOGO_URL} alt="Logo" className="w-64 mb-6 object-contain" />
+                            <h1 className="text-xl font-black text-center text-blue-900 mb-6 uppercase tracking-tighter">DISTRIBUIDORA ALLANA</h1>
+                            <input name="nombre" className="w-full bg-gray-50 border-2 p-4 mb-4 rounded-2xl outline-none focus:border-blue-900" placeholder="Nombre Completo" required />
+                            <input name="dni" type="number" className="w-full bg-gray-50 border-2 p-4 mb-4 rounded-2xl outline-none focus:border-blue-900" placeholder="DNI" required />
+                            <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-8 rounded-2xl outline-none focus:border-blue-900" required>
+                                <option value="">Selecciona tu Localidad</option>
+                                {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                            </select>
+                            <button className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl">Ingresar</button>
+                        </form>
+                    </div>
+                );
+            }
+
+            // TIENDA PRINCIPAL
+            return (
+                <div className="min-h-screen flex flex-col bg-gray-50 relative">
+                    {showWelcome && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl max-w-sm w-full text-center flex flex-col items-center">
+                                <img src={LOGO_URL} alt="Logo" className="w-48 mb-4 object-contain" />
+                                <h2 className="text-xl font-black text-blue-900 uppercase mb-8 leading-tight">Bienvenido a<br/>Distribuidora Allana</h2>
+                                <div className="flex items-center justify-center gap-4 text-blue-900 animate-bounce-x">
+                                    <span className="text-4xl">⬅️</span>
+                                    <span className="font-black text-xs uppercase tracking-widest">Elige categoría</span>
+                                </div>
+                                <button onClick={() => setShowWelcome(false)} className="mt-8 w-full bg-blue-900 text-white py-4 rounded-2xl font-black uppercase shadow-lg">Entendido</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {zoomImage && (
+                        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomImage(null)}>
+                            <img src={zoomImage.url} className="max-w-full max-h-[90vh] rounded-lg object-contain" />
+                        </div>
+                    )}
+
+                    <header className="bg-white border-b sticky top-0 z-50 p-4 shadow-md">
+                        <div className="max-w-7xl mx-auto flex flex-col gap-4">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-5">
+                                    <img src={LOGO_URL} alt="Logo" className="h-28 w-30 object-contain drop-shadow-md" />
+                                    <div>
+                                        <h1 className="font-black text-2xl text-blue-900 uppercase leading-none">DISTRIBUIDORA ALLANA</h1>
+                                        <p className="text-xs font-bold text-gray-500 uppercase mt-2">{cliente.nombre} • {cliente.localidad_nombre}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => {localStorage.clear(); location.reload();}} className="font-black text-red-500 bg-red-50 px-6 py-4 rounded-full uppercase text-sm">Salir</button>
+                            </div>
+                            <input type="text" placeholder="🔎 Buscar producto..." className="w-full bg-gray-100 p-5 rounded-2xl outline-none border-2 border-transparent focus:border-blue-900 transition text-lg" onChange={(e) => setBusqueda(e.target.value)} />
+                        </div>
+                    </header>
+
+                    <div className="flex flex-col md:flex-row max-w-7xl mx-auto w-full flex-grow p-5 gap-6">
+                        <aside className="w-full md:w-80">
+                            <h3 className="text-xl font-black text-gray-400 uppercase mb-4 tracking-widest">Categorías</h3>
+                            <div className="flex md:flex-col gap-3 overflow-x-auto no-scrollbar pb-4 md:pb-0">
+                                <button onClick={() => setCategoriaFiltro('TODOS')} className={`min-w-[150px] md:min-w-full px-6 py-4 rounded-xl font-black uppercase border transition-all ${categoriaFiltro === 'TODOS' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600'}`}>TODOS</button>
+                                {categorias.map(cat => (
+                                    <button key={cat.id} onClick={() => setCategoriaFiltro(cat.nombre)} className={`min-w-[200px] md:min-w-full px-6 py-4 rounded-xl font-black uppercase border transition-all ${categoriaFiltro === cat.nombre ? 'bg-blue-900 text-white' : 'bg-white text-gray-600'}`}>{cat.nombre}</button>
+                                ))}
+                            </div>
+                        </aside>
+
+                        <main className="flex-grow">
+                            {filtrados.length > 0 ? (
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {filtrados.map(p => (
+                                        <TarjetaProducto key={p.id} producto={p} onAdd={agregarAlCarrito} carrito={carrito} onOpenImage={(url, name) => setZoomImage({url, name})} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="h-64 flex flex-col items-center justify-center text-center opacity-30">
+                                    <span className="text-5xl mb-2 animate-bounce-x">⬅️</span>
+                                    <p className="font-black uppercase text-xs">Selecciona una categoría</p>
+                                </div>
+                            )}
+                        </main>
+
+                        <aside className="w-full md:w-80">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 sticky top-32 border-t-8 border-blue-900">
+                                <h2 className="font-black text-xl mb-4 text-blue-900 uppercase">Mi Pedido</h2>
+                                <div className="space-y-3 max-h-64 overflow-y-auto no-scrollbar mb-4">
+                                    {carrito.length === 0 ? <p className="text-center py-6 text-gray-300 font-black uppercase text-xs">Vacío</p> : 
+                                        carrito.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-xl">
+                                                <div className="flex-1 pr-2">
+                                                    <p className="font-bold text-[10px] uppercase leading-tight">{item.nombre}</p>
+                                                    <p className="text-blue-900 font-bold text-xs">{item.cantidad} x ${item.precio.toFixed(2)}</p>
+                                                </div>
+                                                <button onClick={() => setCarrito(carrito.filter((_, i) => i !== idx))} className="text-red-400 font-bold px-2">✕</button>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                                <div className="border-t pt-4 mb-4 flex justify-between items-center">
+                                    <span className="text-gray-400 font-bold uppercase text-xs">Total</span>
+                                    <span className="text-2xl font-black text-blue-900">${carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0).toFixed(2)}</span>
+                                </div>
+                                <button onClick={enviarPedido} disabled={carrito.length === 0} className={`w-full py-5 rounded-2xl font-black text-white shadow-xl uppercase transition-all ${carrito.length === 0 ? 'bg-gray-200' : 'bg-green-600 active:scale-95'}`}>Confirmar Pedido</button>
+                            </div>
+                        </aside>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

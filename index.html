@@ -325,19 +325,43 @@ const confirmarPedido = async () => {
     </div>
 );
 
-            return (
+           return (
                 <div className="min-h-screen flex flex-col pb-24">
-                    <header className="bg-white p-4 shadow-md sticky top-0 z-40">
-                        <div className="flex items-center gap-3 mb-4">
-                            <img src={LOGO_URL} className="h-14" />
-                            <div className="flex-1">
-                                <h1 className="font-black text-blue-900 text-xs uppercase leading-none">Cliente :</h1>
-                                <p className="text-[18px] font-bold text-gray-400 uppercase mt-1">{cliente.nombre} • {cliente.localidad_nombre}</p>
-                            </div>
-                            <button onClick={() => {localStorage.clear(); location.reload();}} className="text-[15px] font-black text-red-500 bg-red-50 px-5 py-5 rounded-full uppercase">Salir</button>
-                        </div>
-                        <input type="text" placeholder="🔎 Buscar productos..." className="w-full bg-gray-100 p-4 rounded-2xl outline-none text-sm border-2 border-transparent focus:border-blue-900" onChange={(e) => setBusqueda(e.target.value)} />
-                    </header>
+                    <header className="bg-white p-3 shadow-sm sticky top-0 z-40">
+    <div className="max-w-2xl mx-auto flex items-center justify-between">
+        {/* Lado Izquierdo: Logo y Datos debajo */}
+        <div className="flex flex-col">
+            <img src={LOGO_URL} className="h-8 object-contain self-start mb-1" />
+            <div className="leading-tight">
+                <p className="text-[10px] font-black text-blue-900 uppercase tracking-tighter">
+                    {cliente.nombre}
+                </p>
+                <p className="text-[9px] font-bold text-gray-400 uppercase">
+                    {cliente.localidad_nombre}
+                </p>
+            </div>
+        </div>
+
+        {/* Lado Derecho: Botón Salir compacto */}
+        <button 
+            onClick={() => {localStorage.clear(); location.reload();}} 
+            className="text-[10px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100"
+        >
+            Salir
+        </button>
+    </div>
+
+    {/* Buscador: Debajo de todo con margen reducido */}
+    <div className="max-w-2xl mx-auto mt-3">
+        <input 
+            type="text" 
+            placeholder="🔎 Buscar productos..." 
+            className="w-full bg-gray-100 p-3 rounded-xl outline-none text-xs border-2 border-transparent focus:border-blue-900 transition-all" 
+            onChange={(e) => setBusqueda(e.target.value)} 
+        />
+    </div>
+</header>
+
 
                     <main className="p-4 flex-grow max-w-2xl mx-auto w-full">
                         <div className="mb-6">
@@ -520,3 +544,4 @@ const confirmarPedido = async () => {
     </script>
 </body>
 </html>
+

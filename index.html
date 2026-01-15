@@ -2,22 +2,61 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Distribuidora Allana - Tienda de Pedidos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Distribuidora Allana</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap');
-        body { font-family: 'Roboto', sans-serif; }
+        body { font-family: 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        @keyframes bounce-x { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-15px); } }
-        .animate-bounce-x { animation: bounce-x 1s infinite; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .modal-enter { animation: slideUp 0.3s ease-out; }
+        .pop-effect { animation: productPop 0.3s ease-out; }
+        @keyframes productPop { 0% { transform: scale(1); } 50% { transform: scale(0.98); } 100% { transform: scale(1); } }
+
+/* Animación del botón del carrito */
+@keyframes cartBounce {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+.animate-cart { animation: cartBounce 0.4s ease-out; }
+
+/* Animación de entrada de la imagen ampliada */
+@keyframes zoomIn {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+}
+.animate-zoom { animation: zoomIn 0.3s ease-out forwards; }
+
+
+/* Animación de "sacudida/salto" para el botón del producto */
+@keyframes squeeze {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.9); }
+    100% { transform: scale(1); }
+}
+.animate-squeeze { animation: squeeze 0.3s ease-in-out; }
+
+/* Animación de "pop" para el flotante del carrito */
+@keyframes cartPop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.4); }
+    100% { transform: scale(1); }
+}
+.animate-pop { animation: cartPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+
+
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50 text-gray-800">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -26,43 +65,7 @@
         const SUPABASE_URL = "https://ejbqlejlgprvwzrptojo.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqYnFsZWpsZ3Bydnd6cnB0b2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMjkwMjIsImV4cCI6MjA3MjYwNTAyMn0.9fVItJka0MN3nlfowVudIE0AuNmfTJGQcbbqpau2Th8";
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-        const NO_IMAGE = "https://via.placeholder.com/150";
         const LOGO_URL = "https://ejbqlejlgprvwzrptojo.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
-
-        function TarjetaProducto({ producto, onAdd, carrito, onOpenImage }) {
-            const [cantidad, setCantidad] = useState(1);
-            const itemEnCarrito = carrito.find(i => i.id === producto.id);
-            const disponible = (producto.stock || 0) - (itemEnCarrito ? itemEnCarrito.cantidad : 0);
-            const imgURL = producto.imagen ? `${SUPABASE_URL}/storage/v1/object/public/promo_images/${producto.imagen}` : NO_IMAGE;
-
-            return (
-                <div className={`bg-white rounded-2xl shadow-sm border p-4 flex flex-col h-full transition-all ${disponible <= 0 ? 'opacity-60' : 'hover:shadow-md'}`}>
-                    <div className="flex justify-between mb-2">
-                        <span className={`text-[10px] font-black px-2 py-1 rounded ${disponible > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>STOCK: {producto.stock || 0}</span>
-                    </div>
-                    <div className="w-full h-32 flex items-center justify-center mb-3 cursor-zoom-in" onClick={() => onOpenImage(imgURL, producto.nombre)}>
-                        <img src={imgURL} className="max-h-full object-contain" alt={producto.nombre} onError={(e) => e.target.src = NO_IMAGE} />
-                    </div>
-                    <h3 className="text-xs font-bold uppercase h-10 overflow-hidden text-gray-700 leading-tight mb-2">{producto.nombre}</h3>
-                    <div className="mb-4 mt-auto">
-                        <p className="text-blue-900 font-black text-2xl tracking-tighter">$ {producto.precio.toFixed(2)}</p>
-                    </div>
-                    <div className="space-y-2">
-                        {disponible > 0 ? (
-                            <>
-                                <div className="flex items-center justify-between bg-gray-100 rounded-xl p-1 border">
-                                    <button onClick={() => cantidad > 1 && setCantidad(cantidad - 1)} className="w-8 h-8 bg-white rounded-lg shadow font-black text-blue-900">-</button>
-                                    <span className="font-bold text-sm">{cantidad}</span>
-                                    <button onClick={() => cantidad < disponible && setCantidad(cantidad + 1)} className="w-8 h-8 bg-white rounded-lg shadow font-black text-blue-900">+</button>
-                                </div>
-                                <button onClick={() => { onAdd(producto, cantidad); setCantidad(1); }} className="w-full bg-blue-900 text-white py-3 rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition">Añadir</button>
-                            </>
-                        ) : <button disabled className="w-full bg-gray-200 text-gray-400 py-3 rounded-xl text-[11px] font-black uppercase">Sin Stock</button>}
-                    </div>
-                </div>
-            );
-        }
 
         function App() {
             const [cliente, setCliente] = useState(null);
@@ -70,15 +73,14 @@
             const [productos, setProductos] = useState([]);
             const [categorias, setCategorias] = useState([]);
             const [carrito, setCarrito] = useState([]);
-            const [categoriaFiltro, setCategoriaFiltro] = useState(null);
-            const [busqueda, setBusqueda] = useState('');
             const [loading, setLoading] = useState(true);
-            const [showWelcome, setShowWelcome] = useState(false);
-            const [zoomImage, setZoomImage] = useState(null);
-            
-            // Estados para recuperación de pedidos
+            const [busqueda, setBusqueda] = useState('');
+            const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+            const [catOpen, setCatOpen] = useState(false);
+            const [showCart, setShowCart] = useState(false);
             const [pedidoPendiente, setPedidoPendiente] = useState(null);
-            const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+            const [showRecovery, setShowRecovery] = useState(false);
+            const [cantidadesTemp, setCantidadesTemp] = useState({});
 
             useEffect(() => {
                 const session = localStorage.getItem('distribuidora_session');
@@ -92,7 +94,12 @@
                 const { data: prods } = await sb.from('promociones').select('*').order('nombre');
                 if (locs) setLocalidades(locs);
                 if (cats) setCategorias(cats);
-                if (prods) setProductos(prods);
+                if (prods) {
+                    setProductos(prods);
+                    const initialCants = {};
+                    prods.forEach(p => initialCants[p.id] = 1);
+                    setCantidadesTemp(initialCants);
+                }
                 setLoading(false);
             }
 
@@ -106,203 +113,404 @@
                 });
             }, [productos, categorias, categoriaFiltro, busqueda]);
 
-            const handleLogin = async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const dni = formData.get('dni');
-                const nombre = formData.get('nombre');
-                const selectEl = e.target.elements.localidad;
-                const loc_id = selectEl.value;
-                const loc_nombre = selectEl.options[selectEl.selectedIndex].text;
-
-                const datosCliente = { nombre, dni, localidad_id: loc_id, localidad_nombre: loc_nombre };
-
-                // Buscar pedido pendiente en Supabase
-                const { data: pedidoExistente } = await sb
-                    .from('pedidos')
-                    .select('*')
-                    .eq('dni', dni)
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (pedidoExistente) {
-                    setPedidoPendiente(pedidoExistente);
-                    setCliente(datosCliente); // Guardamos datos pero mostramos modal antes
-                    setShowRecoveryModal(true);
-                } else {
-                    finalizarLogin(datosCliente);
-                }
+            const updateTempCant = (id, delta, stock) => {
+                setCantidadesTemp(prev => ({
+                    ...prev,
+                    [id]: Math.max(1, Math.min(stock, (prev[id] || 1) + delta))
+                }));
             };
 
-            const finalizarLogin = (datos) => {
-                setCliente(datos);
-                localStorage.setItem('distribuidora_session', JSON.stringify(datos));
-                setShowWelcome(true);
-            };
+           const agregarAlCarrito = (prod) => {
+    const qtyAAgregar = cantidadesTemp[prod.id] || 1;
+    const itemEnCarrito = carrito.find(i => i.id === prod.id);
+    const cantidadTotalPostCheck = (itemEnCarrito ? itemEnCarrito.cantidad : 0) + qtyAAgregar;
 
-            const recuperarPedido = () => {
-                if (pedidoPendiente && pedidoPendiente.productos) {
-                    setCarrito(pedidoPendiente.productos);
-                }
-                localStorage.setItem('distribuidora_session', JSON.stringify(cliente));
-                setShowRecoveryModal(false);
-                setShowWelcome(true);
-            };
+    if (prod.stock < cantidadTotalPostCheck) {
+        alert(`No hay stock suficiente. Máximo disponible: ${prod.stock}`);
+        return;
+    }
 
-            const agregarAlCarrito = (prod, cant) => {
-                setCarrito(prev => {
-                    const existe = prev.find(i => i.id === prod.id);
-                    if (existe) return prev.map(i => i.id === prod.id ? { ...i, cantidad: i.cantidad + cant } : i);
-                    return [...prev, { ...prod, cantidad: cant }];
+    setCarrito(prev => {
+        if (itemEnCarrito) {
+            return prev.map(i => i.id === prod.id 
+                ? { ...i, cantidad: i.cantidad + qtyAAgregar } 
+                : i
+            );
+        }
+        return [...prev, { ...prod, cantidad: qtyAAgregar }];
+    });
+    
+    // ACTIVAR ANIMACIÓN
+    setCartAnimating(true);
+    setTimeout(() => setCartAnimating(false), 400); // Se apaga después de 400ms
+    
+    setCantidadesTemp(prev => ({ ...prev, [prod.id]: 1 }));
+};
+
+
+const [imgAmpliada, setImgAmpliada] = useState(null);
+const [cartAnimating, setCartAnimating] = useState(false);
+
+// Función para ampliar imagen con auto-cierre
+const ampliarImagen = (url) => {
+    setImgAmpliada(url);
+    setTimeout(() => setImgAmpliada(null), 3000);
+};
+
+ 
+            const generarPDF = (items, total) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                // Fondo encabezado
+                doc.setFillColor(23, 37, 84); // Azul oscuro
+                doc.rect(0, 0, 210, 40, 'F');
+                
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(22);
+                doc.setFont("helvetica", "bold");
+                doc.text("DISTRIBUIDORA ALLANA", 105, 20, { align: "center" });
+                doc.setFontSize(10);
+                doc.text("COMPROBANTE DE PEDIDO", 105, 30, { align: "center" });
+
+                doc.setTextColor(0, 0, 0);
+                doc.setFontSize(11);
+                doc.text(`Cliente: ${cliente.nombre}`, 15, 55);
+                doc.text(`DNI: ${cliente.dni}`, 15, 62);
+                doc.text(`Localidad: ${cliente.localidad_nombre}`, 15, 69);
+                doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 150, 55);
+
+                const body = items.map(i => [i.nombre.toUpperCase(), i.cantidad, `$${i.precio.toFixed(2)}`, `$${(i.precio * i.cantidad).toFixed(2)}`]);
+
+                doc.autoTable({
+                    startY: 80,
+                    head: [['Producto', 'Cant.', 'Precio Unit.', 'Subtotal']],
+                    body: body,
+                    headStyles: { fillColor: [23, 37, 84] },
+                    theme: 'grid'
                 });
+
+                const finalY = doc.lastAutoTable.finalY + 10;
+                doc.setFontSize(14);
+                doc.setFont("helvetica", "bold");
+                doc.text(`TOTAL A PAGAR: $${total.toFixed(2)}`, 195, finalY, { align: "right" });
+
+                doc.save(`Pedido_Allana_${cliente.nombre.replace(/\s/g, '_')}.pdf`);
             };
 
-            async function enviarPedido() {
-                if (carrito.length === 0) return;
-                const total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
+           
 
-                const { error } = await sb.from('pedidos').insert([{
-                    cliente: cliente.nombre,
-                    dni: cliente.dni,
-                    localidad_id: parseInt(cliente.localidad_id),
-                    productos: carrito,
-                    total: total
-                }]);
 
-                if (error) alert("Error: " + error.message);
-                else {
-                    alert("¡Pedido enviado con éxito!");
-                    setCarrito([]);
-                }
+
+const modificarCantidadCarrito = (id, delta) => {
+    setCarrito(prev => prev.map(item => {
+        if (item.id === id) {
+            const nuevaCant = item.cantidad + delta;
+            // Si la cantidad llega a 0, podrías eliminarlo o dejarlo en 1. 
+            // Aquí lo limitamos a 1, el botón eliminar se encarga del resto.
+            if (nuevaCant < 1) return item; 
+            if (nuevaCant > item.stock) {
+                alert("Límite de stock alcanzado");
+                return item;
             }
+            return { ...item, cantidad: nuevaCant };
+        }
+        return item;
+    }));
+};
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse uppercase">Cargando Distribuidora Allana...</div>;
+const eliminarDelCarrito = (id) => {
+    setCarrito(prev => prev.filter(item => item.id !== id));
+};
 
-            // PANTALLA DE LOGIN
-            if (!cliente || showRecoveryModal) {
-                if (showRecoveryModal) {
-                    return (
-                        <div className="min-h-screen flex items-center justify-center p-4 bg-blue-900">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center">
-                                <div className="text-5xl mb-4">📦</div>
-                                <h2 className="text-2xl font-black text-blue-900 uppercase mb-2">¡Pedido Encontrado!</h2>
-                                <p className="text-gray-500 mb-6 font-medium">Hola {cliente.nombre}, detectamos que tienes un pedido anterior. ¿Deseas recuperarlo para modificarlo?</p>
-                                <div className="space-y-3">
-                                    <button onClick={recuperarPedido} className="w-full bg-green-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition">Sí, recuperar pedido</button>
-                                    <button onClick={() => { setShowRecoveryModal(false); setShowWelcome(true); localStorage.setItem('distribuidora_session', JSON.stringify(cliente)); }} className="w-full bg-gray-100 text-gray-500 py-4 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition">No, empezar uno nuevo16:13 14/1/202616:13 14/1/2026</button>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                }
 
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-4 bg-blue-900">
-                        <form onSubmit={handleLogin} className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm flex flex-col items-center">
-                            <img src={LOGO_URL} alt="Logo" className="w-64 mb-6 object-contain" />
-                            <h1 className="text-xl font-black text-center text-blue-900 mb-6 uppercase tracking-tighter">DISTRIBUIDORA ALLANA</h1>
-                            <input name="nombre" className="w-full bg-gray-50 border-2 p-4 mb-4 rounded-2xl outline-none focus:border-blue-900" placeholder="Nombre Completo" required />
-                            <input name="dni" type="number" className="w-full bg-gray-50 border-2 p-4 mb-4 rounded-2xl outline-none focus:border-blue-900" placeholder="DNI" required />
-                            <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-8 rounded-2xl outline-none focus:border-blue-900" required>
-                                <option value="">Selecciona tu Localidad</option>
-                                {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                            </select>
-                            <button className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest shadow-xl">Ingresar</button>
-                        </form>
-                    </div>
-                );
-            }
 
-            // TIENDA PRINCIPAL
+
+
+
+const confirmarPedido = async () => {
+    if (carrito.length === 0) return;
+    
+    // 1. Calculamos el total
+    const total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
+    
+    // 2. Limpiamos el objeto del carrito para la base de datos (evita errores de JSON)
+    const productosParaDB = carrito.map(item => ({
+        id: item.id,
+        nombre: item.nombre,
+        cantidad: item.cantidad,
+        precio: item.precio,
+        subtotal: item.precio * item.cantidad
+    }));
+
+    try {
+        // 3. Insertar el pedido en Supabase
+        const { error: pError } = await sb.from('pedidos').insert([{
+            cliente: cliente.nombre, 
+            dni: cliente.dni, 
+            localidad_id: parseInt(cliente.localidad_id), // Aseguramos que sea número
+            productos: productosParaDB, 
+            total: total,
+            created_at: new Date().toISOString()
+        }]);
+
+        if (pError) throw pError;
+
+        // 4. Descontar Stock mediante RPC
+        const stockPromises = carrito.map(item => 
+            sb.rpc('decrement_stock', { row_id: item.id, amount: item.cantidad })
+        );
+        
+        await Promise.all(stockPromises);
+
+        // 5. Éxito: Feedback, PDF y Limpieza
+        alert("🚀 ¡Pedido enviado con éxito y stock actualizado!");
+        generarPDF(carrito, total);
+        
+        setCarrito([]);
+        setShowCart(false);
+        fetchData(); // Recargamos productos para ver el nuevo stock en la lista
+
+    } catch (error) {
+        console.error("Error completo:", error);
+        alert(`Error al procesar: ${error.message || 'Verifica tu conexión'}`);
+    }
+};
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse">CARGANDO...</div>;
+
+            if (!cliente) return (
+    <div className="min-h-screen bg-blue-900 flex items-center justify-center p-6">
+        <form 
+            onSubmit={(e) => {
+    e.preventDefault();
+    const form = e.target;
+    const select = form.localidad;
+    
+    // Obtenemos el ID y el Nombre
+    const idLocalidad = select.value; 
+    const nombreLocalidad = select.options[select.selectedIndex].text;
+
+    const datosUsuario = { 
+        nombre: form.nombre.value, 
+        dni: form.dni.value, 
+        localidad_id: idLocalidad, // <-- Importante: Guardamos el ID
+        localidad_nombre: nombreLocalidad 
+    };
+
+    setCliente(datosUsuario);
+    localStorage.setItem('distribuidora_session', JSON.stringify(datosUsuario));
+}}
+
+
+            className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center"
+        >
+            <img src={LOGO_URL} className="w-40 mb-6" />
+            
+            <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
+            
+            <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl" required />
+            
+            <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-6 rounded-2xl" required>
+                <option value="">Tu Localidad</option>
+                {localidades.map(l => (
+                    <option key={l.id} value={l.id}>{l.nombre}</option>
+                ))}
+            </select>
+            
+            <button className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest">
+                Ingresar
+            </button>
+        </form>
+    </div>
+);
+
             return (
-                <div className="min-h-screen flex flex-col bg-gray-50 relative">
-                    {showWelcome && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl max-w-sm w-full text-center flex flex-col items-center">
-                                <img src={LOGO_URL} alt="Logo" className="w-48 mb-4 object-contain" />
-                                <h2 className="text-xl font-black text-blue-900 uppercase mb-8 leading-tight">Bienvenido a<br/>Distribuidora Allana</h2>
-                                <div className="flex items-center justify-center gap-4 text-blue-900 animate-bounce-x">
-                                    <span className="text-4xl">⬅️</span>
-                                    <span className="font-black text-xs uppercase tracking-widest">Elige categoría</span>
-                                </div>
-                                <button onClick={() => setShowWelcome(false)} className="mt-8 w-full bg-blue-900 text-white py-4 rounded-2xl font-black uppercase shadow-lg">Entendido</button>
+                <div className="min-h-screen flex flex-col pb-24">
+                    <header className="bg-white p-4 shadow-md sticky top-0 z-40">
+                        <div className="flex items-center gap-3 mb-4">
+                            <img src={LOGO_URL} className="h-14" />
+                            <div className="flex-1">
+                                <h1 className="font-black text-blue-900 text-xs uppercase leading-none">Cliente :</h1>
+                                <p className="text-[18px] font-bold text-gray-400 uppercase mt-1">{cliente.nombre} • {cliente.localidad_nombre}</p>
                             </div>
+                            <button onClick={() => {localStorage.clear(); location.reload();}} className="text-[15px] font-black text-red-500 bg-red-50 px-5 py-5 rounded-full uppercase">Salir</button>
                         </div>
-                    )}
-
-                    {zoomImage && (
-                        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomImage(null)}>
-                            <img src={zoomImage.url} className="max-w-full max-h-[90vh] rounded-lg object-contain" />
-                        </div>
-                    )}
-
-                    <header className="bg-white border-b sticky top-0 z-50 p-4 shadow-md">
-                        <div className="max-w-7xl mx-auto flex flex-col gap-4">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-5">
-                                    <img src={LOGO_URL} alt="Logo" className="h-28 w-30 object-contain drop-shadow-md" />
-                                    <div>
-                                        <h1 className="font-black text-2xl text-blue-900 uppercase leading-none">DISTRIBUIDORA ALLANA</h1>
-                                        <p className="text-xs font-bold text-gray-500 uppercase mt-2">{cliente.nombre} • {cliente.localidad_nombre}</p>
-                                    </div>
-                                </div>
-                                <button onClick={() => {localStorage.clear(); location.reload();}} className="font-black text-red-500 bg-red-50 px-6 py-4 rounded-full uppercase text-sm">Salir</button>
-                            </div>
-                            <input type="text" placeholder="🔎 Buscar producto..." className="w-full bg-gray-100 p-5 rounded-2xl outline-none border-2 border-transparent focus:border-blue-900 transition text-lg" onChange={(e) => setBusqueda(e.target.value)} />
-                        </div>
+                        <input type="text" placeholder="🔎 Buscar productos..." className="w-full bg-gray-100 p-4 rounded-2xl outline-none text-sm border-2 border-transparent focus:border-blue-900" onChange={(e) => setBusqueda(e.target.value)} />
                     </header>
 
-                    <div className="flex flex-col md:flex-row max-w-7xl mx-auto w-full flex-grow p-5 gap-6">
-                        <aside className="w-full md:w-80">
-                            <h3 className="text-xl font-black text-gray-400 uppercase mb-4 tracking-widest">Categorías</h3>
-                            <div className="flex md:flex-col gap-3 overflow-x-auto no-scrollbar pb-4 md:pb-0">
-                                <button onClick={() => setCategoriaFiltro('TODOS')} className={`min-w-[150px] md:min-w-full px-6 py-4 rounded-xl font-black uppercase border transition-all ${categoriaFiltro === 'TODOS' ? 'bg-blue-900 text-white' : 'bg-white text-gray-600'}`}>TODOS</button>
-                                {categorias.map(cat => (
-                                    <button key={cat.id} onClick={() => setCategoriaFiltro(cat.nombre)} className={`min-w-[200px] md:min-w-full px-6 py-4 rounded-xl font-black uppercase border transition-all ${categoriaFiltro === cat.nombre ? 'bg-blue-900 text-white' : 'bg-white text-gray-600'}`}>{cat.nombre}</button>
-                                ))}
-                            </div>
-                        </aside>
-
-                        <main className="flex-grow">
-                            {filtrados.length > 0 ? (
-                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {filtrados.map(p => (
-                                        <TarjetaProducto key={p.id} producto={p} onAdd={agregarAlCarrito} carrito={carrito} onOpenImage={(url, name) => setZoomImage({url, name})} />
+                    <main className="p-4 flex-grow max-w-2xl mx-auto w-full">
+                        <div className="mb-6">
+                            <button onClick={() => setCatOpen(!catOpen)} className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[11px]">
+                                <span>📦 CATEGORÍA: {categoriaFiltro || 'SELECCIONAR'}</span>
+                                <span className={catOpen ? 'rotate-180' : ''}>▼</span>
+                            </button>
+                            {catOpen && (
+                                <div className="mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden">
+                                    <button onClick={() => { setCategoriaFiltro('TODOS'); setCatOpen(false); }} className="w-full p-4 text-left border-b hover:bg-gray-50 font-bold text-xs text-gray-400">Mostrar Todo</button>
+                                    {categorias.map(c => (
+                                        <button key={c.id} onClick={() => { setCategoriaFiltro(c.nombre); setCatOpen(false); }} className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase">{c.nombre}</button>
                                     ))}
                                 </div>
-                            ) : (
-                                <div className="h-64 flex flex-col items-center justify-center text-center opacity-30">
-                                    <span className="text-5xl mb-2 animate-bounce-x">⬅️</span>
-                                    <p className="font-black uppercase text-xs">Selecciona una categoría</p>
-                                </div>
                             )}
-                        </main>
+                        </div>
 
-                        <aside className="w-full md:w-80">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 sticky top-32 border-t-8 border-blue-900">
-                                <h2 className="font-black text-xl mb-4 text-blue-900 uppercase">Mi Pedido</h2>
-                                <div className="space-y-3 max-h-64 overflow-y-auto no-scrollbar mb-4">
-                                    {carrito.length === 0 ? <p className="text-center py-6 text-gray-300 font-black uppercase text-xs">Vacío</p> : 
-                                        carrito.map((item, idx) => (
-                                            <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-xl">
-                                                <div className="flex-1 pr-2">
-                                                    <p className="font-bold text-[10px] uppercase leading-tight">{item.nombre}</p>
-                                                    <p className="text-blue-900 font-bold text-xs">{item.cantidad} x ${item.precio.toFixed(2)}</p>
-                                                </div>
-                                                <button onClick={() => setCarrito(carrito.filter((_, i) => i !== idx))} className="text-red-400 font-bold px-2">✕</button>
-                                            </div>
-                                        ))
-                                    }
-                                </div>
-                                <div className="border-t pt-4 mb-4 flex justify-between items-center">
-                                    <span className="text-gray-400 font-bold uppercase text-xs">Total</span>
-                                    <span className="text-2xl font-black text-blue-900">${carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0).toFixed(2)}</span>
-                                </div>
-                                <button onClick={enviarPedido} disabled={carrito.length === 0} className={`w-full py-5 rounded-2xl font-black text-white shadow-xl uppercase transition-all ${carrito.length === 0 ? 'bg-gray-200' : 'bg-green-600 active:scale-95'}`}>Confirmar Pedido</button>
-                            </div>
-                        </aside>
+                        <div className="grid grid-cols-1 gap-4">
+    {filtrados.map(p => {
+    const precioAnt = (p.precio * 1.30).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+    const precioActual = p.precio.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+    
+    // Lógica de colores para el stock
+    const stockColor = p.stock > 10 ? 'text-green-600 bg-green-50' : p.stock > 0 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
+    const stockLabel = p.stock > 0 ? `${p.stock} unidades` : 'Sin stock';
+
+    return (
+        <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-[0.98]">
+            {/* Badge de Oferta */}
+            <div className="absolute top-0 left-0 bg-red-500 text-white text-[8px] font-black px-3 py-1 rounded-br-xl uppercase">
+                Oferta Especial
+            </div>
+
+            {/* Imagen con evento de click */}
+<div 
+    onClick={() => ampliarImagen(`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`)}
+    className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity"
+>
+    <img 
+        src={`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`} 
+        className="max-w-full max-h-full object-contain"
+    />
+</div>
+
+            {/* Información */}
+            <div className="flex-1 flex flex-col justify-between h-28">
+                <div>
+                    <h3 className="text-[11px] font-bold uppercase text-gray-500 leading-tight mb-1">{p.nombre}</h3>
+                    
+                    {/* Visualizador de Stock */}
+                    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${stockColor} mb-2`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${stockColor.replace('text', 'bg').split(' ')[0]}`}></div>
+                        <span className="text-[12px] font-black uppercase tracking-tighter">{stockLabel}</span>
                     </div>
+
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-blue-900 font-black text-xl">{precioActual}</span>
+                        <span className="text-gray-400 text-xs line-through">{precioAnt}</span>
+                    </div>
+                </div>
+
+                {/* Controles */}
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center bg-gray-100 rounded-lg p-0.5 border">
+                        <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900">-</button>
+                        <span className="w-6 text-center text-xs font-black">{cantidadesTemp[p.id] || 1}</span>
+                        <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900">+</button>
+                    </div>
+                    <button 
+                        onClick={() => agregarAlCarrito(p)} 
+                        disabled={p.stock <= 0}
+                        className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:bg-blue-800"
+                    >
+                        {p.stock > 0 ? 'Agregar' : 'Agotado'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+})}
+
+</div>
+                    </main>
+
+                    <div className="fixed bottom-6 right-6 z-50">
+    <button 
+        onClick={() => setShowCart(true)} 
+        className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl flex items-center justify-center border-4 border-white transition-all ${cartAnimating ? 'animate-pop' : ''}`}
+    >
+        <span className="text-2xl">🛒</span>
+        {carrito.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-7 h-7 rounded-full flex items-center justify-center border-2 border-white">
+                {carrito.reduce((acc, i) => acc + i.cantidad, 0)}
+            </span>
+        )}
+    </button>
+</div>
+
+                    {showCart && (
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end backdrop-blur-sm" onClick={() => setShowCart(false)}>
+        <div className="bg-white w-full max-h-[90vh] rounded-t-[2.5rem] p-8 flex flex-col modal-enter shadow-2xl" onClick={e => e.stopPropagation()}>
+            
+            {/* Botón Seguir Agregando */}
+            <button 
+                onClick={() => setShowCart(false)}
+                className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 transition-all"
+            >
+                ↑ Seguir agregando productos
+            </button>
+
+            <h2 className="text-2xl font-black text-blue-900 mb-6 uppercase flex justify-between items-center">
+                Tu Pedido
+                <span className="text-xs bg-blue-100 text-blue-900 px-3 py-1 rounded-full">{carrito.length} Items</span>
+            </h2>
+
+            <div className="flex-grow overflow-y-auto space-y-4 mb-6 no-scrollbar">
+                {carrito.length === 0 ? (
+                    <p className="text-center py-10 text-gray-400 font-bold">Tu carrito está vacío</p>
+                ) : (
+                    carrito.map(item => (
+                        <div key={item.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                            <div className="flex-1">
+                                <p className="text-[15px] font-black uppercase text-gray-700 leading-tight mb-1">{item.nombre}</p>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center bg-white rounded-lg border shadow-sm">
+                                        <button onClick={() => modificarCantidadCarrito(item.id, -1)} className="w-8 h-8 text-blue-900 font-black">-</button>
+                                        <span className="w-8 text-center text-xs font-black">{item.cantidad}</span>
+                                        <button onClick={() => modificarCantidadCarrito(item.id, 1)} className="w-8 h-8 text-blue-900 font-black">+</button>
+                                    </div>
+                                    <button onClick={() => eliminarDelCarrito(item.id)} className="text-red-400 text-[15px] font-bold uppercase underline">Eliminar Producto</button>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="font-black text-blue-900">${(item.precio * item.cantidad).toLocaleString('es-AR')}</p>
+                                <p className="text-[9px] text-gray-400 font-bold">${item.precio.toLocaleString('es-AR')} c/u</p>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            <div className="border-t pt-6">
+                <div className="flex justify-between items-end mb-6">
+                    <div>
+                        <span className="text-gray-400 font-black uppercase text-[10px] block">Total estimado</span>
+                        <span className="text-3xl font-black text-blue-900">${carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0).toLocaleString('es-AR')}</span>
+                    </div>
+                </div>
+                
+                <button 
+                    onClick={confirmarPedido} 
+                    disabled={carrito.length === 0}
+                    className="w-full bg-green-600 text-white py-6 rounded-2xl font-black uppercase shadow-xl active:scale-[0.98] transition-transform disabled:bg-gray-300"
+                >
+                    Confirmar y Descargar PDF
+                </button>
+            </div>
+        </div>
+    </div>
+)}
+{imgAmpliada && (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-6" onClick={() => setImgAmpliada(null)}>
+        <div className="relative animate-zoom">
+            <img 
+                src={imgAmpliada} 
+                className="max-w-full max-h-[70vh] rounded-3xl shadow-2xl border-4 border-white" 
+            />
+            <div className="absolute -bottom-12 left-0 right-0 text-center text-white font-black uppercase text-xs tracking-widest">
+                Se cerrará automáticamente...
+            </div>
+        </div>
+    </div>
+)}
                 </div>
             );
         }

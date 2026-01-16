@@ -54,6 +54,30 @@
 
 
 
+<style>
+    /* ... tus estilos existentes ... */
+
+    @keyframes fadeInOut {
+        0% { opacity: 0; transform: translateY(20px); }
+        10% { opacity: 1; transform: translateY(0); }
+        90% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(20px); }
+    }
+
+    @keyframes bounceHand {
+        0%, 100% { transform: translateY(0) translateX(-50%) rotate(20deg); }
+        50% { transform: translateY(-10px) translateX(-50%) rotate(20deg); }
+    }
+
+    .hint-animate {
+        animation: fadeInOut 5s ease-in-out forwards;
+    }
+    .hand-animate {
+        animation: bounceHand 0.8s infinite ease-in-out;
+    }
+</style>
+
+
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -81,8 +105,91 @@
             const [pedidoPendiente, setPedidoPendiente] = useState(null);
             const [showRecovery, setShowRecovery] = useState(false);
             const [cantidadesTemp, setCantidadesTemp] = useState({});
+	    const [showHistorial, setShowHistorial] = useState(false);
+            const [misPedidos, setMisPedidos] = useState([]);
+const [pedidosRecuperables, setPedidosRecuperables] = useState([]);
+const [showModalLogin, setShowModalLogin] = useState(false);
+const [tempUser, setTempUser] = useState(null);
+const [showCategoryHint, setShowCategoryHint] = useState(false);
 
-            useEffect(() => {
+
+
+useEffect(() => {
+    const handleBeforeUnload = (e) => {
+        if (carrito.length > 0) {
+            e.preventDefault();
+            e.returnValue = 'Tienes un pedido en curso. ¿Seguro que quieres salir?';
+        }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+}, [carrito]);
+
+
+// Al cargar la App, recuperar el carrito guardado
+useEffect(() => {
+    const savedCart = localStorage.getItem('distribuidora_cart');
+    if (savedCart) {
+        try {
+            setCarrito(JSON.parse(savedCart));
+        } catch (e) {
+            console.error("Error recuperando carrito");
+        }
+    }
+}, []);
+
+// Cada vez que el carrito cambie, guardarlo en el teléfono
+useEffect(() => {
+    localStorage.setItem('distribuidora_cart', JSON.stringify(carrito));
+}, [carrito]);
+
+
+
+useEffect(() => {
+    const handlePopState = (e) => {
+        // Si hay algún modal abierto, lo cerramos y evitamos que el navegador retroceda
+        if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen) {
+            setShowCart(false);
+            setShowHistorial(false);
+            setImgAmpliada(null);
+            setShowModalLogin(false);
+            setCatOpen(false);
+            
+            // Re-insertamos el estado para que el siguiente "atrás" sí funcione o cierre otro modal
+            history.pushState(null, null, window.location.pathname);
+        }
+    };
+
+    // Escuchamos el evento del botón atrás del móvil
+    window.addEventListener('popstate', handlePopState);
+
+    return () => window.removeEventListener('popstate', handlePopState);
+}, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen]);
+
+// Efecto para insertar el primer estado cuando se abre cualquier modal
+useEffect(() => {
+    if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen) {
+        history.pushState(null, null, window.location.pathname);
+    }
+}, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen]);
+
+            
+useEffect(() => {
+    // Muestra el hint solo si el cliente está logueado
+    // y no ha seleccionado categoría ni buscado productos.
+    if (cliente && !categoriaFiltro && !busqueda && productos.length > 0) {
+        setShowCategoryHint(true);
+        const timer = setTimeout(() => {
+            setShowCategoryHint(false);
+        }, 5000); // El hint desaparece después de 5 segundos
+        return () => clearTimeout(timer);
+    } else {
+        setShowCategoryHint(false); // Oculta el hint si ya hay filtro, búsqueda o no hay cliente
+    }
+}, [cliente, categoriaFiltro, busqueda, productos.length]); // Dependencias para que se ejecute cuando cambien
+
+
+useEffect(() => {
                 const session = localStorage.getItem('distribuidora_session');
                 if (session) setCliente(JSON.parse(session));
                 fetchData();
@@ -145,6 +252,18 @@
     setTimeout(() => setCartAnimating(false), 400); // Se apaga después de 400ms
     
     setCantidadesTemp(prev => ({ ...prev, [prod.id]: 1 }));
+};
+
+
+const cargarHistorial = async () => {
+    const { data, error } = await sb
+        .from('pedidos')
+        .select('*')
+        .eq('dni', cliente.dni)
+        .order('created_at', { ascending: false });
+    
+    if (data) setMisPedidos(data);
+    setShowHistorial(true);
 };
 
 
@@ -225,6 +344,19 @@ const eliminarDelCarrito = (id) => {
 
 
 
+const recuperarPedido = (pedido) => {
+    // Transformamos el JSON de la DB al formato del carrito
+    const productosRecuperados = pedido.productos.map(p => ({
+        ...p,
+        // Buscamos el stock actual del producto para no cargar algo agotado
+        stock: productos.find(prod => prod.id === p.id)?.stock || 0
+    }));
+    
+    setCarrito(productosRecuperados);
+    setCliente(tempUser);
+    localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
+    setShowModalLogin(false);
+};
 
 
 
@@ -280,45 +412,74 @@ const confirmarPedido = async () => {
             if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse">CARGANDO...</div>;
 
             if (!cliente) return (
-    <div className="min-h-screen bg-blue-900 flex items-center justify-center p-6">
-        <form 
-            onSubmit={(e) => {
-    e.preventDefault();
-    const form = e.target;
-    const select = form.localidad;
-    
-    // Obtenemos el ID y el Nombre
-    const idLocalidad = select.value; 
-    const nombreLocalidad = select.options[select.selectedIndex].text;
+    <div className="min-h-screen bg-blue-900 flex items-center justify-center p-6 relative">
+        {/* MODAL DE RECUPERACIÓN (Aparece solo si hay pedidos previos) */}
+        {showModalLogin && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-900/90 backdrop-blur-xl p-4">
+                <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 modal-enter shadow-2xl">
+                    <div className="text-center mb-6">
+                        <div className="text-4xl mb-2">👋</div>
+                        <h2 className="text-2xl font-black text-blue-900 uppercase leading-tight">¡Hola de nuevo!</h2>
+                        <p className="text-gray-400 text-sm font-bold mt-1">¿Qué deseas hacer hoy?</p>
+                    </div>
+                    <div className="space-y-3 mb-6">
+                        {pedidosRecuperables.slice(0, 1).map(p => (
+                            <button key={p.id} onClick={() => {
+                                setCarrito(p.productos);
+                                setCliente(tempUser);
+                                localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
+                                setShowModalLogin(false);
+                            }} className="w-full bg-blue-50 border-2 border-blue-900 p-4 rounded-2xl text-left">
+                                <p className="text-[10px] font-black text-blue-900/50 uppercase">Último pedido: {new Date(p.created_at).toLocaleDateString()}</p>
+                                <span className="font-black text-blue-900 text-sm italic">RECUPERAR Y EDITAR ESTE PEDIDO</span>
+                            </button>
+                        ))}
+                        <button onClick={() => {
+                            setCliente(tempUser);
+                            localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
+                            setCarrito([]);
+                            setShowModalLogin(false);
+                        }} className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg">
+                            Empezar Pedido Nuevo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
-    const datosUsuario = { 
-        nombre: form.nombre.value, 
-        dni: form.dni.value, 
-        localidad_id: idLocalidad, // <-- Importante: Guardamos el ID
-        localidad_nombre: nombreLocalidad 
-    };
+        <form onSubmit={async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const datos = {
+                nombre: form.nombre.value,
+                dni: form.dni.value,
+                localidad_id: form.localidad.value,
+                localidad_nombre: form.localidad.options[form.localidad.selectedIndex].text
+            };
 
-    setCliente(datosUsuario);
-    localStorage.setItem('distribuidora_session', JSON.stringify(datosUsuario));
-}}
-
-
-            className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center"
-        >
+            try {
+                const { data, error } = await sb.from('pedidos').select('*').eq('dni', datos.dni).order('created_at', { ascending: false });
+                if (!error && data && data.length > 0) {
+                    setPedidosRecuperables(data);
+                    setTempUser(datos);
+                    setShowModalLogin(true);
+                } else {
+                    setCliente(datos);
+                    localStorage.setItem('distribuidora_session', JSON.stringify(datos));
+                }
+            } catch (err) {
+                setCliente(datos); // Si hay error de red, entra igual
+                localStorage.setItem('distribuidora_session', JSON.stringify(datos));
+            }
+        }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl">
             <img src={LOGO_URL} className="w-40 mb-6" />
-            
             <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
-            
-            <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl" required />
-            
-            <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-6 rounded-2xl" required>
+            <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
+            <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-6 rounded-2xl outline-none focus:border-blue-900" required>
                 <option value="">Tu Localidad</option>
-                {localidades.map(l => (
-                    <option key={l.id} value={l.id}>{l.nombre}</option>
-                ))}
+                {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
             </select>
-            
-            <button className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest">
+            <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform">
                 Ingresar
             </button>
         </form>
@@ -342,14 +503,26 @@ const confirmarPedido = async () => {
             </div>
         </div>
 
-        {/* Lado Derecho: Botón Salir compacto */}
-        <button 
-            onClick={() => {localStorage.clear(); location.reload();}} 
-            className="text-[16px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100"
-        >
-            Salir
-        </button>
-    </div>
+        
+
+    <button 
+        onClick={async () => {
+            const { data } = await sb.from('pedidos').select('*').eq('dni', cliente.dni).order('created_at', { ascending: false });
+            setMisPedidos(data || []);
+            setShowHistorial(true);
+        }}
+        className="text-[14px] font-black text-blue-900 bg-blue-50 px-4 py-2 rounded-xl uppercase border border-blue-100 active:bg-blue-100"
+    >
+        📋 Historial de Pedidos
+    </button>
+    <button 
+        onClick={() => {localStorage.clear(); location.reload();}} 
+        className="text-[14px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100"
+    >
+        Salir
+    </button>
+</div>
+
 
     {/* Buscador: Debajo de todo con margen reducido */}
     <div className="max-w-2xl mx-auto mt-3">
@@ -360,90 +533,134 @@ const confirmarPedido = async () => {
             onChange={(e) => setBusqueda(e.target.value)} 
         />
     </div>
+
+
+
 </header>
 
+
+
                     <main className="p-4 flex-grow max-w-2xl mx-auto w-full">
-                        <div className="mb-6">
-                            <button onClick={() => setCatOpen(!catOpen)} className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px]">
-                                <span>📦 CATEGORÍA: {categoriaFiltro || 'SELECCIONAR'}</span>
-                                <span className={catOpen ? 'rotate-180' : ''}>▼</span>
-                            </button>
-                            {catOpen && (
-                                <div className="mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden">
-                                    <button onClick={() => { setCategoriaFiltro('TODOS'); setCatOpen(false); }} className="w-full p-4 text-left border-b hover:bg-gray-50 font-bold text-xs text-gray-400">Mostrar Todo</button>
-                                    {categorias.map(c => (
-                                        <button key={c.id} onClick={() => { setCategoriaFiltro(c.nombre); setCatOpen(false); }} className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase">{c.nombre}</button>
-                                    ))}
-                                </div>
-                            )}
+    {/* Contenedor relativo para posicionar la guía sobre el botón */}
+    <div className="relative mb-6">
+        
+        {/* Animación de Bienvenida y Guía sobre el botón */}
+        {showCategoryHint && (
+            <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-50 text-center w-full hint-animate pointer-events-none">
+                <div className="flex flex-col items-center">
+                    <p className="bg-blue-900 text-white px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest shadow-2xl border-2 border-white mb-1">
+                        ¡Selecciona una categoría para comenzar!
+                    </p>
+                    <span className="text-4xl hand-animate inline-block">👇</span>
+                </div>
+            </div>
+        )}
+
+        {/* Selector de Categorías */}
+        <button 
+            onClick={() => {
+                setCatOpen(!catOpen);
+                setShowCategoryHint(false); // Se oculta al interactuar
+            }} 
+            className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px] active:scale-[0.98] transition-transform"
+        >
+            <span>📦 CATEGORÍA: {categoriaFiltro || 'SELECCIONAR'}</span>
+            <span className={`transition-transform duration-300 ${catOpen ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+
+        {catOpen && (
+            <div className="absolute w-full mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden modal-enter z-40">
+                <button 
+                    onClick={() => { setCategoriaFiltro('TODOS'); setCatOpen(false); }} 
+                    className="w-full p-4 text-left border-b hover:bg-gray-50 font-bold text-xs text-gray-400 uppercase"
+                >
+                    Mostrar Todo
+                </button>
+                {categorias.map(c => (
+                    <button 
+                        key={c.id} 
+                        onClick={() => { setCategoriaFiltro(c.nombre); setCatOpen(false); }} 
+                        className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase active:bg-blue-50"
+                    >
+                        {c.nombre}
+                    </button>
+                ))}
+            </div>
+        )}
+    </div>
+
+    {/* Listado de Productos */}
+    <div className="grid grid-cols-1 gap-4">
+        {filtrados.length === 0 && !loading && (
+            <div className="text-center py-20 bg-gray-50/50 rounded-[3rem] border-2 border-dashed border-gray-200">
+                <p className="text-gray-400 font-black uppercase tracking-widest text-sm px-10">
+                    {busqueda || categoriaFiltro ? "No hay productos disponibles" : "Selecciona una categoría para ver los productos"}
+                </p>
+            </div>
+        )}
+
+        {filtrados.map(p => {
+            const precioAnt = (p.precio * 1.30).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+            const precioActual = p.precio.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+            const stockColor = p.stock > 10 ? 'text-green-600 bg-green-50' : p.stock > 0 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
+            const stockLabel = p.stock > 0 ? `${p.stock} unidades` : 'Sin stock';
+
+            return (
+                <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-[0.98]">
+                    {/* Badge de Oferta */}
+                    <div className="absolute top-0 left-0 bg-red-500 text-white text-[8px] font-black px-3 py-1 rounded-br-xl uppercase">
+                        
+                    </div>
+
+                    {/* Imagen con evento de click */}
+                    <div 
+                        onClick={() => ampliarImagen(`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`)}
+                        className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity"
+                    >
+                        <img 
+                            src={`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`} 
+                            className="max-w-full max-h-full object-contain"
+                        />
+                    </div>
+
+                    {/* Información */}
+                    <div className="flex-1 flex flex-col justify-between h-28">
+                        <div>
+                            <h3 className="text-[11px] font-bold uppercase text-gray-500 leading-tight mb-1">{p.nombre}</h3>
+                            
+                            {/* Visualizador de Stock */}
+                            <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${stockColor} mb-2`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${stockColor.replace('text', 'bg').split(' ')[0]}`}></div>
+                                <span className="text-[12px] font-black uppercase tracking-tighter">{stockLabel}</span>
+                            </div>
+
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-blue-900 font-black text-xl">{precioActual}</span>
+                                <span className="text-gray-400 text-xs line-through">{precioAnt}</span>
+                            </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4">
-    {filtrados.map(p => {
-    const precioAnt = (p.precio * 1.30).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-    const precioActual = p.precio.toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-    
-    // Lógica de colores para el stock
-    const stockColor = p.stock > 10 ? 'text-green-600 bg-green-50' : p.stock > 0 ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50';
-    const stockLabel = p.stock > 0 ? `${p.stock} unidades` : 'Sin stock';
-
-    return (
-        <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-[0.98]">
-            {/* Badge de Oferta */}
-            <div className="absolute top-0 left-0 bg-red-500 text-white text-[8px] font-black px-3 py-1 rounded-br-xl uppercase">
-                Oferta Especial
-            </div>
-
-            {/* Imagen con evento de click */}
-<div 
-    onClick={() => ampliarImagen(`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`)}
-    className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity"
->
-    <img 
-        src={`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`} 
-        className="max-w-full max-h-full object-contain"
-    />
-</div>
-
-            {/* Información */}
-            <div className="flex-1 flex flex-col justify-between h-28">
-                <div>
-                    <h3 className="text-[11px] font-bold uppercase text-gray-500 leading-tight mb-1">{p.nombre}</h3>
-                    
-                    {/* Visualizador de Stock */}
-                    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${stockColor} mb-2`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${stockColor.replace('text', 'bg').split(' ')[0]}`}></div>
-                        <span className="text-[12px] font-black uppercase tracking-tighter">{stockLabel}</span>
-                    </div>
-
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-blue-900 font-black text-xl">{precioActual}</span>
-                        <span className="text-gray-400 text-xs line-through">{precioAnt}</span>
+                        {/* Controles */}
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center bg-gray-100 rounded-lg p-0.5 border">
+                                <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900">-</button>
+                                <span className="w-6 text-center text-xs font-black">{cantidadesTemp[p.id] || 1}</span>
+                                <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900">+</button>
+                            </div>
+                            <button 
+                                onClick={() => agregarAlCarrito(p)} 
+                                disabled={p.stock <= 0}
+                                className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:bg-blue-800"
+                            >
+                                {p.stock > 0 ? 'Agregar' : 'Agotado'}
+                            </button>
+                        </div>
                     </div>
                 </div>
-
-                {/* Controles */}
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-gray-100 rounded-lg p-0.5 border">
-                        <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900">-</button>
-                        <span className="w-6 text-center text-xs font-black">{cantidadesTemp[p.id] || 1}</span>
-                        <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900">+</button>
-                    </div>
-                    <button 
-                        onClick={() => agregarAlCarrito(p)} 
-                        disabled={p.stock <= 0}
-                        className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:bg-blue-800"
-                    >
-                        {p.stock > 0 ? 'Agregar' : 'Agotado'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-})}
-
-</div>
-                    </main>
+            );
+        })}
+    </div>
+</main>
 
                     <div className="fixed bottom-6 right-6 z-50">
     <button 
@@ -534,6 +751,43 @@ const confirmarPedido = async () => {
         </div>
     </div>
 )}
+
+
+{showHistorial && (
+    <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className="bg-white w-full max-w-md max-h-[80vh] rounded-[2rem] p-6 flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-black text-blue-900 uppercase">Mis Pedidos</h2>
+                <button onClick={() => setShowHistorial(false)} className="text-gray-400 font-bold">CERRAR</button>
+            </div>
+            
+            <div className="overflow-y-auto space-y-3 no-scrollbar">
+                {misPedidos.length === 0 ? (
+                    <p className="text-center py-10 text-gray-400">No tienes pedidos anteriores.</p>
+                ) : (
+                    misPedidos.map(p => (
+                        <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border flex justify-between items-center">
+                            <div>
+                                <p className="text-[10px] font-bold text-gray-400">{new Date(p.created_at).toLocaleDateString()}</p>
+                                <p className="font-black text-blue-900">${p.total.toLocaleString('es-AR')}</p>
+                                <p className="text-[10px] uppercase font-bold text-gray-500">{p.productos.length} productos</p>
+                            </div>
+                            <button 
+                                onClick={() => generarPDF(p.productos, p.total)}
+                                className="bg-white border-2 border-blue-900 text-blue-900 p-2 rounded-xl text-[10px] font-black uppercase"
+                            >
+                                Re-descargar PDF
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    </div>
+)}
+
+
+
                 </div>
             );
         }

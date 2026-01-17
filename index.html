@@ -111,6 +111,7 @@ const [pedidosRecuperables, setPedidosRecuperables] = useState([]);
 const [showModalLogin, setShowModalLogin] = useState(false);
 const [tempUser, setTempUser] = useState(null);
 const [showCategoryHint, setShowCategoryHint] = useState(false);
+const [idPedidoEditando, setIdPedidoEditando] = useState(null);
 
 
 
@@ -345,28 +346,22 @@ const eliminarDelCarrito = (id) => {
 
 
 const recuperarPedido = (pedido) => {
-    // Transformamos el JSON de la DB al formato del carrito
     const productosRecuperados = pedido.productos.map(p => ({
         ...p,
-        // Buscamos el stock actual del producto para no cargar algo agotado
         stock: productos.find(prod => prod.id === p.id)?.stock || 0
     }));
     
     setCarrito(productosRecuperados);
+    setIdPedidoEditando(pedido.id); // <--- Guardamos el ID para saber que es una edición
     setCliente(tempUser);
     localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
     setShowModalLogin(false);
 };
 
 
-
 const confirmarPedido = async () => {
     if (carrito.length === 0) return;
-    
-    // 1. Calculamos el total
     const total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
-    
-    // 2. Limpiamos el objeto del carrito para la base de datos (evita errores de JSON)
     const productosParaDB = carrito.map(item => ({
         id: item.id,
         nombre: item.nombre,
@@ -376,38 +371,45 @@ const confirmarPedido = async () => {
     }));
 
     try {
-        // 3. Insertar el pedido en Supabase
-        const { error: pError } = await sb.from('pedidos').insert([{
-            cliente: cliente.nombre, 
-            dni: cliente.dni, 
-            localidad_id: parseInt(cliente.localidad_id), // Aseguramos que sea número
-            productos: productosParaDB, 
-            total: total,
-            created_at: new Date().toISOString()
-        }]);
+        if (idPedidoEditando) {
+            // MODO EDICIÓN: Usamos la función inteligente de SQL
+            const { error } = await sb.rpc('actualizar_pedido_con_stock', {
+                pedido_id: idPedidoEditando,
+                nuevos_productos: productosParaDB,
+                nuevo_total: total
+            });
+            if (error) throw error;
+            alert("✅ Pedido actualizado correctamente");
+        } else {
+            // MODO NUEVO: Tu lógica original
+            const { error: pError } = await sb.from('pedidos').insert([{
+                cliente: cliente.nombre, 
+                dni: cliente.dni, 
+                localidad_id: parseInt(cliente.localidad_id), 
+                productos: productosParaDB, 
+                total: total
+            }]);
+            if (pError) throw pError;
 
-        if (pError) throw pError;
+            const stockPromises = carrito.map(item => 
+                sb.rpc('decrement_stock', { row_id: item.id, amount: item.cantidad })
+            );
+            await Promise.all(stockPromises);
+            alert("🚀 ¡Pedido nuevo enviado con éxito!");
+        }
 
-        // 4. Descontar Stock mediante RPC
-        const stockPromises = carrito.map(item => 
-            sb.rpc('decrement_stock', { row_id: item.id, amount: item.cantidad })
-        );
-        
-        await Promise.all(stockPromises);
-
-        // 5. Éxito: Feedback, PDF y Limpieza
-        alert("🚀 ¡Pedido enviado con éxito y stock actualizado!");
         generarPDF(carrito, total);
-        
         setCarrito([]);
+        setIdPedidoEditando(null); // Limpiamos el modo edición
         setShowCart(false);
-        fetchData(); // Recargamos productos para ver el nuevo stock en la lista
+        fetchData(); 
 
     } catch (error) {
-        console.error("Error completo:", error);
-        alert(`Error al procesar: ${error.message || 'Verifica tu conexión'}`);
+        alert(`Error: ${error.message}`);
     }
 };
+
+
 
             if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse">CARGANDO...</div>;
 

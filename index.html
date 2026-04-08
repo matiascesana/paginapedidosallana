@@ -137,13 +137,38 @@ const [idPedidoEditando, setIdPedidoEditando] = useState(null);
 
 
 const saldoPendiente = useMemo(() => {
-    // Sumamos todos los totales de los pedidos
-    const totalPedidos = misPedidos.reduce((acc, p) => acc + (parseFloat(p.total) || 0), 0);
-    // Sumamos todos los valores cargados en la columna 'pagos'
-    const totalPagos = misPedidos.reduce((acc, p) => acc + (parseFloat(p.pagos) || 0), 0);
-    
+
+    const totalPedidos = misPedidos.reduce((acc, p) => {
+        return acc + (parseFloat(p.total) || 0);
+    }, 0);
+
+    const totalPagos = misPedidos.reduce((acc, p) => {
+
+        let pagosArray = [];
+
+        // 🔥 manejar JSON o array
+        if (typeof p.pagos === "string") {
+            try {
+                pagosArray = JSON.parse(p.pagos);
+            } catch {
+                pagosArray = [];
+            }
+        } else if (Array.isArray(p.pagos)) {
+            pagosArray = p.pagos;
+        }
+
+        const sumaPagosPedido = pagosArray.reduce((subAcc, pago) => {
+            return subAcc + (parseFloat(pago.monto) || 0);
+        }, 0);
+
+        return acc + sumaPagosPedido;
+
+    }, 0);
+
     return totalPedidos - totalPagos;
+
 }, [misPedidos]);
+
 
 
 useEffect(() => {
@@ -284,6 +309,39 @@ useEffect(() => {
     setTimeout(() => setCartAnimating(false), 400); // Se apaga después de 400ms
     
     setCantidadesTemp(prev => ({ ...prev, [prod.id]: 1 }));
+};
+
+
+
+
+const calcularEstadoPedido = (p) => {
+
+    const total = parseFloat(p.total) || 0;
+
+    let pagosArray = [];
+
+    if (typeof p.pagos === "string") {
+        try {
+            pagosArray = JSON.parse(p.pagos);
+        } catch {
+            pagosArray = [];
+        }
+    } else if (Array.isArray(p.pagos)) {
+        pagosArray = p.pagos;
+    }
+
+    const pagado = pagosArray.reduce((acc, pago) => {
+        return acc + (parseFloat(pago.monto) || 0);
+    }, 0);
+
+    const saldo = total - pagado;
+
+    let estado = "pendiente";
+
+    if (saldo <= 0) estado = "pagado";
+    else if (pagado > 0) estado = "parcial";
+
+    return { total, pagado, saldo, estado };
 };
 
 
@@ -885,24 +943,85 @@ const confirmarPedido = async () => {
             
             <div className="overflow-y-auto space-y-3 no-scrollbar">
                 {misPedidos.length === 0 ? (
-                    <p className="text-center py-10 text-gray-400">No tienes pedidos anteriores.</p>
+                    <p className="text-center py-10 text-gray-400">
+                        No tienes pedidos anteriores.
+                    </p>
                 ) : (
-                    misPedidos.map(p => (
-                        <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border flex justify-between items-center">
-        <div>
-            <p className="text-[10px] font-bold text-gray-400">{new Date(p.created_at).toLocaleDateString()}</p>
-            {/* Aquí usamos toLocaleString que funciona bien con números o parseamos */}
-            <p className="font-black text-blue-900">${parseFloat(p.total).toLocaleString('es-AR')}</p>
-            <p className="text-[10px] uppercase font-bold text-gray-500">{p.productos.length} productos</p>
-        </div>
-        <button 
-            onClick={() => generarPDF(p.productos, parseFloat(p.total))} // <-- PARSEAR AQUÍ
-            className="bg-white border-2 border-blue-900 text-blue-900 p-2 rounded-xl text-[10px] font-black uppercase"
-        >
-            Re-descargar PDF
-        </button>
-    </div>
-                    ))
+                    misPedidos.map(p => {
+
+                        const total = parseFloat(p.total) || 0;
+
+                        let pagosArray = [];
+
+                        if (typeof p.pagos === "string") {
+                            try {
+                                pagosArray = JSON.parse(p.pagos);
+                            } catch {
+                                pagosArray = [];
+                            }
+                        } else if (Array.isArray(p.pagos)) {
+                            pagosArray = p.pagos;
+                        }
+
+                        const pagado = pagosArray.reduce((acc, pago) => {
+                            return acc + (parseFloat(pago.monto) || 0);
+                        }, 0);
+
+                        const saldo = total - pagado;
+
+                        let estado = "pendiente";
+                        if (saldo <= 0) estado = "pagado";
+                        else if (pagado > 0) estado = "parcial";
+
+                        const colores = {
+                            pagado: "border-green-500 text-green-600",
+                            parcial: "border-yellow-500 text-yellow-600",
+                            pendiente: "border-red-500 text-red-600"
+                        };
+
+                        return (
+                            <div 
+                                key={p.id} 
+                                className={`bg-gray-50 p-4 rounded-2xl border-l-4 ${colores[estado]} flex justify-between items-center`}
+                            >
+                                <div>
+                                    <p className="text-[10px] font-bold text-gray-400">
+                                        {new Date(p.created_at).toLocaleDateString()}
+                                    </p>
+
+                                    <p className="font-black text-blue-900">
+                                        ${total.toLocaleString('es-AR')}
+                                    </p>
+
+                                    <p className="text-[10px] uppercase font-bold text-gray-500">
+                                        {p.productos.length} productos
+                                    </p>
+
+                                    <p className={`text-[11px] font-black mt-1 ${colores[estado].split(' ')[1]}`}>
+                                        {estado === "pagado" && "✅ Pagado"}
+                                        {estado === "parcial" && `⚠️ Saldo: $${saldo.toLocaleString('es-AR')}`}
+                                        {estado === "pendiente" && `❌ Debe: $${saldo.toLocaleString('es-AR')}`}
+                                    </p>
+
+                                    <div className="w-full bg-gray-200 h-2 rounded-full mt-2">
+                                        <div 
+                                            className="bg-green-500 h-2 rounded-full"
+                                            style={{
+                                                width: `${Math.min((pagado / total) * 100 || 0, 100)}%`
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={() => generarPDF(p.productos, total)}
+                                    className="bg-white border-2 border-blue-900 text-blue-900 p-2 rounded-xl text-[10px] font-black uppercase"
+                                >
+                                    Re-descargar PDF
+                                </button>
+                            </div>
+                        );
+                    })
                 )}
             </div>
         </div>

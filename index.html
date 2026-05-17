@@ -494,6 +494,7 @@ const confirmarPedido = async () => {
                 total: total,
                 created_at: fechaActualArg,
                 pagos: 0,
+		archivado: false,
                 estado: "pendiente",  // <-- Agregado: Inicializa como string "pendiente"
                 preparado: false      // <-- Agregado: Inicializa como booleano false
             }]);

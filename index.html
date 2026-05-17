@@ -469,7 +469,6 @@ const confirmarPedido = async () => {
     }));
 
     // Usamos el formato ISO para evitar el error de "null" en la fecha
-    // Aunque el RPC lo puede generar, enviarlo así asegura compatibilidad
     const fechaActualArg = new Date().toISOString();
 
     try {
@@ -486,15 +485,17 @@ const confirmarPedido = async () => {
             alert("✅ Pedido actualizado correctamente");
         } else {
             // --- MODO NUEVO PEDIDO ---
-            // 1. Insertamos el registro en la tabla pedidos
+            // 1. Insertamos el registro en la tabla pedidos (Supabase asigna el ID automáticamente)
             const { error: pError } = await sb.from('pedidos').insert([{
                 cliente: cliente.nombre, 
                 dni: cliente.dni, 
                 localidad_id: parseInt(cliente.localidad_id), 
                 productos: productosParaDB, 
                 total: total,
-                created_at: fechaActualArg, // Enviamos la fecha en formato ISO
-                pagos: 0 // Inicializamos la columna pagos en 0 para el cálculo de saldo
+                created_at: fechaActualArg,
+                pagos: 0,
+                estado: "pendiente",  // <-- Agregado: Inicializa como string "pendiente"
+                preparado: false      // <-- Agregado: Inicializa como booleano false
             }]);
 
             if (pError) throw pError;
@@ -520,7 +521,7 @@ const confirmarPedido = async () => {
         // Refrescamos los datos para que el stock y el saldo se actualicen en la pantalla
         fetchData();
         
-        // Opcional: Recargar el historial para que el saldo se vea reflejado inmediatamente
+        // Recargar el historial para que el saldo se vea reflejado inmediatamente
         const { data: nuevosPedidos } = await sb.from('pedidos')
             .select('*')
             .eq('dni', cliente.dni)
@@ -532,7 +533,6 @@ const confirmarPedido = async () => {
         alert(`Hubo un error: ${error.message || 'Error desconocido'}`);
     }
 };
-
 
 
             if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse">CARGANDO...</div>;

@@ -106,10 +106,21 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        const SUPABASE_URL = "https://ejbqlejlgprvwzrptojo.supabase.co";
-        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqYnFsZWpsZ3Bydnd6cnB0b2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMjkwMjIsImV4cCI6MjA3MjYwNTAyMn0.9fVItJka0MN3nlfowVudIE0AuNmfTJGQcbbqpau2Th8";
+        const SUPABASE_URL = "https://rgbjinmllhhymczumwhs.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnYmppbm1sbGhoeW1jenVtd2hzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNDA5MDcsImV4cCI6MjA3ODYxNjkwN30.y7uSk4gEVJNbPvuLDC0ZXOyA8OhogptbKAofodxgV1w";
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        const LOGO_URL = "https://ejbqlejlgprvwzrptojo.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
+        const LOGO_URL = "https://rgbjinmllhhymczumwhs.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
+
+
+// --- NUEVO: ESTADO GLOBAL PARA OPTIMIZACIÓN ---
+let globalCache = {
+    productos: [],
+    loaded: false
+};
+let searchTimer;
+// ----------------------------------------------
+
+
 
         function App() {
             const [cliente, setCliente] = useState(null);
@@ -246,55 +257,80 @@ useEffect(() => {
 }, [cliente, categoriaFiltro, busqueda, productos.length]); // Dependencias para que se ejecute cuando cambien
 
 
+// --- 1. CARGA INICIAL OPTIMIZADA ---
 useEffect(() => {
-                const session = localStorage.getItem('distribuidora_session');
-                if (session) setCliente(JSON.parse(session));
-                fetchData();
-            }, []);
+    const session = localStorage.getItem('distribuidora_session');
+    if (session) setCliente(JSON.parse(session));
+    fetchData();
+}, []);
 
-            async function fetchData() {
-                const { data: locs } = await sb.from('localidades').select('*').order('nombre');
-                const { data: cats } = await sb.from('categorias').select('*').order('nombre');
-                const { data: prods } = await sb.from('promociones').select('*').order('nombre');
-                if (locs) setLocalidades(locs);
-                if (cats) setCategorias(cats);
-                if (prods) {
-                    setProductos(prods);
-                    const initialCants = {};
-                    prods.forEach(p => initialCants[p.id] = 1);
-                    setCantidadesTemp(initialCants);
-                }
-                setLoading(false);
-            }
-
-            const filtrados = useMemo(() => {
-                if (!categoriaFiltro && !busqueda) return [];
-                return productos.filter(p => {
-                    const cat = categorias.find(c => c.id === p.categoria_id);
-                    const matchCat = categoriaFiltro === 'TODOS' || (cat && cat.nombre === categoriaFiltro);
-                    const matchBus = p.nombre?.toLowerCase().includes(busqueda.toLowerCase());
-                    return busqueda ? matchBus : matchCat;
-                });
-            }, [productos, categorias, categoriaFiltro, busqueda]);
-
-            const updateTempCant = (id, delta, stock) => {
-                setCantidadesTemp(prev => ({
-                    ...prev,
-                    [id]: Math.max(1, Math.min(stock, (prev[id] || 1) + delta))
-                }));
-            };
-
-           const agregarAlCarrito = (prod) => {
-    const qtyAAgregar = cantidadesTemp[prod.id] || 1;
-    const itemEnCarrito = carrito.find(i => i.id === prod.id);
-    const cantidadTotalPostCheck = (itemEnCarrito ? itemEnCarrito.cantidad : 0) + qtyAAgregar;
-
-    if (prod.stock < cantidadTotalPostCheck) {
-        alert(`No hay stock suficiente. Máximo disponible: ${prod.stock}`);
+async function fetchData() {
+    // Si ya cargamos los datos antes, los usamos del caché sin consultar a Supabase
+    if (globalCache.loaded) {
+        const { locs, cats, prods } = globalCache.data;
+        setLocalidades(locs);
+        setCategorias(cats);
+        setProductos(prods);
+        setLoading(false);
         return;
     }
 
+    // Usamos Promise.all para disparar las 3 peticiones en paralelo (más rápido)
+    // SELECT SELECTIVO: Solo pedimos los campos necesarios, no '*'
+    const [locsRes, catsRes, prodsRes] = await Promise.all([
+        sb.from('localidades').select('id, nombre').order('nombre'),
+        sb.from('categorias').select('id, nombre').order('nombre'),
+        sb.from('promociones').select('id, nombre, precio, stock, categoria_id, imagen').order('nombre')
+    ]);
+
+    if (prodsRes.data) {
+        // Guardamos en caché
+        globalCache.data = { locs: locsRes.data, cats: catsRes.data, prods: prodsRes.data };
+        globalCache.loaded = true;
+
+        setLocalidades(locsRes.data);
+        setCategorias(catsRes.data);
+        setProductos(prodsRes.data);
+
+        // Inicializar cantidades una sola vez
+        const initialCants = {};
+        prodsRes.data.forEach(p => initialCants[p.id] = 1);
+        setCantidadesTemp(initialCants);
+    }
+    setLoading(false);
+}
+
+// --- 2. FILTRADO EFICIENTE ---
+const filtrados = useMemo(() => {
+    if (!categoriaFiltro && !busqueda) return [];
+    
+    // Convertimos a minúsculas una sola vez
+    const busquedaLower = busqueda.toLowerCase();
+    
+    return productos.filter(p => {
+        // Buscamos la categoría por ID directamente (más rápido que buscar por nombre)
+        const matchCat = categoriaFiltro === 'TODOS' || 
+                         categorias.find(c => c.id === p.categoria_id && c.nombre === categoriaFiltro);
+        
+        const matchBus = p.nombre?.toLowerCase().includes(busquedaLower);
+        
+        return busqueda ? matchBus : matchCat;
+    });
+}, [productos, categorias, categoriaFiltro, busqueda]);
+
+// --- 3. AGREGAR AL CARRITO (Con actualización funcional segura) ---
+const agregarAlCarrito = (prod) => {
+    const qtyAAgregar = cantidadesTemp[prod.id] || 1;
+
     setCarrito(prev => {
+        const itemEnCarrito = prev.find(i => i.id === prod.id);
+        const cantidadActual = itemEnCarrito ? itemEnCarrito.cantidad : 0;
+
+        if (prod.stock < (cantidadActual + qtyAAgregar)) {
+            alert(`No hay stock suficiente. Máximo disponible: ${prod.stock}`);
+            return prev; // Retornamos el estado anterior sin cambios
+        }
+
         if (itemEnCarrito) {
             return prev.map(i => i.id === prod.id 
                 ? { ...i, cantidad: i.cantidad + qtyAAgregar } 
@@ -304,12 +340,11 @@ useEffect(() => {
         return [...prev, { ...prod, cantidad: qtyAAgregar }];
     });
     
-    // ACTIVAR ANIMACIÓN
     setCartAnimating(true);
-    setTimeout(() => setCartAnimating(false), 400); // Se apaga después de 400ms
-    
+    setTimeout(() => setCartAnimating(false), 400);
     setCantidadesTemp(prev => ({ ...prev, [prod.id]: 1 }));
 };
+
 
 
 

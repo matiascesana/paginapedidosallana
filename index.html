@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Distribuidora Allana</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.4"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <style>
@@ -85,18 +85,18 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo } = window.React;
+        const { createRoot } = window.ReactDOM;
 
         const SUPABASE_URL = "https://rgbjinmllhhymczumwhs.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnYmppbm1sbGhoeW1jenVtd2hzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNDA5MDcsImV4cCI6MjA3ODYxNjkwN30.RfTk7s9I6XJ5AiTLYRQvKIH1T0LeFWX1T0QvC_lZxLo";
-        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const LOGO_URL = "https://rgbjinmllhhymczumwhs.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
 
         let globalCache = {
             productos: [],
             loaded: false
         };
-        let searchTimer;
 
         function App() {
             const [cliente, setCliente] = useState(null);
@@ -109,8 +109,6 @@
             const [categoriaFiltro, setCategoriaFiltro] = useState(null);
             const [catOpen, setCatOpen] = useState(false);
             const [showCart, setShowCart] = useState(false);
-            const [pedidoPendiente, setPedidoPendiente] = useState(null);
-            const [showRecovery, setShowRecovery] = useState(false);
             const [cantidadesTemp, setCantidadesTemp] = useState({});
             const [showHistorial, setShowHistorial] = useState(false);
             const [misPedidos, setMisPedidos] = useState([]);
@@ -225,23 +223,27 @@
                     return;
                 }
 
-                const [locsRes, catsRes, prodsRes] = await Promise.all([
-                    sb.from('localidades').select('id, nombre').order('nombre'),
-                    sb.from('categorias').select('id, nombre').order('nombre'),
-                    sb.from('promociones').select('id, nombre, precio, stock, categoria_id, imagen').order('nombre')
-                ]);
+                try {
+                    const [locsRes, catsRes, prodsRes] = await Promise.all([
+                        sb.from('localidades').select('id, nombre').order('nombre'),
+                        sb.from('categorias').select('id, nombre').order('nombre'),
+                        sb.from('promociones').select('id, nombre, precio, stock, categoria_id, imagen').order('nombre')
+                    ]);
 
-                if (prodsRes.data) {
-                    globalCache.data = { locs: locsRes.data, cats: catsRes.data, prods: prodsRes.data };
-                    globalCache.loaded = true;
+                    if (prodsRes.data) {
+                        globalCache.data = { locs: locsRes.data, cats: catsRes.data, prods: prodsRes.data };
+                        globalCache.loaded = true;
 
-                    setLocalidades(locsRes.data);
-                    setCategorias(catsRes.data);
-                    setProductos(prodsRes.data);
+                        setLocalidades(locsRes.data);
+                        setCategorias(catsRes.data);
+                        setProductos(prodsRes.data);
 
-                    const initialCants = {};
-                    prodsRes.data.forEach(p => initialCants[p.id] = 1);
-                    setCantidadesTemp(initialCants);
+                        const initialCants = {};
+                        prodsRes.data.forEach(p => initialCants[p.id] = 1);
+                        setCantidadesTemp(initialCants);
+                    }
+                } catch (err) {
+                    console.error("Error cargando datos:", err);
                 }
                 setLoading(false);
             }
@@ -326,61 +328,55 @@
                 return { total, pagado, saldo, estado };
             };
 
-            const cargarHistorial = async () => {
-                const { data, error } = await sb
-                    .from('pedidos')
-                    .select('*')
-                    .eq('dni', cliente.dni)
-                    .order('created_at', { ascending: false });
-                
-                if (data) setMisPedidos(data);
-                setShowHistorial(true);
-            };
-
             const ampliarImagen = (url) => {
                 setImgAmpliada(url);
                 setTimeout(() => setImgAmpliada(null), 3000);
             };
 
             const generarPDF = (items, total) => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                
-                const totalNum = parseFloat(total) || 0;
-                
-                doc.setFillColor(23, 37, 84);
-                doc.rect(0, 0, 210, 40, 'F');
-                
-                doc.setTextColor(255, 255, 255);
-                doc.setFontSize(22);
-                doc.setFont("helvetica", "bold");
-                doc.text("DISTRIBUIDORA ALLANA", 105, 20, { align: "center" });
-                doc.setFontSize(10);
-                doc.text("COMPROBANTE DE PEDIDO", 105, 30, { align: "center" });
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    
+                    const totalNum = parseFloat(total) || 0;
+                    
+                    doc.setFillColor(23, 37, 84);
+                    doc.rect(0, 0, 210, 40, 'F');
+                    
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFontSize(22);
+                    doc.setFont("helvetica", "bold");
+                    doc.text("DISTRIBUIDORA ALLANA", 105, 20, { align: "center" });
+                    doc.setFontSize(10);
+                    doc.text("COMPROBANTE DE PEDIDO", 105, 30, { align: "center" });
 
-                doc.setTextColor(0, 0, 0);
-                doc.setFontSize(11);
-                doc.text(`Cliente: ${cliente.nombre}`, 15, 55);
-                doc.text(`DNI: ${cliente.dni}`, 15, 62);
-                doc.text(`Localidad: ${cliente.localidad_nombre}`, 15, 69);
-                doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 150, 55);
+                    doc.setTextColor(0, 0, 0);
+                    doc.setFontSize(11);
+                    doc.text(`Cliente: ${cliente.nombre}`, 15, 55);
+                    doc.text(`DNI: ${cliente.dni}`, 15, 62);
+                    doc.text(`Localidad: ${cliente.localidad_nombre}`, 15, 69);
+                    doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 150, 55);
 
-                const body = items.map(i => [i.nombre.toUpperCase(), i.cantidad, `$${i.precio.toFixed(2)}`, `$${(i.precio * i.cantidad).toFixed(2)}`]);
+                    const body = items.map(i => [i.nombre.toUpperCase(), i.cantidad, `$${i.precio.toFixed(2)}`, `$${(i.precio * i.cantidad).toFixed(2)}`]);
 
-                doc.autoTable({
-                    startY: 80,
-                    head: [['Producto', 'Cant.', 'Precio Unit.', 'Subtotal']],
-                    body: body,
-                    headStyles: { fillColor: [23, 37, 84] },
-                    theme: 'grid'
-                });
+                    doc.autoTable({
+                        startY: 80,
+                        head: [['Producto', 'Cant.', 'Precio Unit.', 'Subtotal']],
+                        body: body,
+                        headStyles: { fillColor: [23, 37, 84] },
+                        theme: 'grid'
+                    });
 
-                const finalY = doc.lastAutoTable.finalY + 10;
-                doc.setFontSize(14);
-                doc.setFont("helvetica", "bold");
-                doc.text(`TOTAL A PAGAR: $${totalNum.toFixed(2)}`, 195, finalY, { align: "right" });
+                    const finalY = doc.lastAutoTable.finalY + 10;
+                    doc.setFontSize(14);
+                    doc.setFont("helvetica", "bold");
+                    doc.text(`TOTAL A PAGAR: $${totalNum.toFixed(2)}`, 195, finalY, { align: "right" });
 
-                doc.save(`Pedido_Allana_${cliente.nombre.replace(/\s/g, '_')}.pdf`);
+                    doc.save(`Pedido_Allana_${cliente.nombre.replace(/\s/g, '_')}.pdf`);
+                } catch (err) {
+                    console.error("Error generando PDF:", err);
+                    alert("Error al generar PDF");
+                }
             };
 
             const modificarCantidadCarrito = (id, delta) => {
@@ -501,7 +497,7 @@
                                         <button 
                                             key={p.id} 
                                             onClick={() => recuperarPedido(p)}
-                                            className="w-full bg-blue-50 border-2 border-blue-900 p-4 rounded-2xl text-left"
+                                            className="w-full bg-blue-50 border-2 border-blue-900 p-4 rounded-2xl text-left hover:bg-blue-100"
                                         >
                                             <p className="text-[10px] font-black text-blue-900/50 uppercase">
                                                 Último pedido: {new Date(p.created_at).toLocaleDateString()}
@@ -514,7 +510,7 @@
                                         localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
                                         setCarrito([]);
                                         setShowModalLogin(false);
-                                    }} className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg">
+                                    }} className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg hover:bg-blue-800">
                                         Empezar Pedido Nuevo
                                     </button>
                                 </div>
@@ -547,14 +543,14 @@
                             localStorage.setItem('distribuidora_session', JSON.stringify(datos));
                         }
                     }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl">
-                        <img src={LOGO_URL} className="w-40 mb-6" />
+                        <img src={LOGO_URL} className="w-40 mb-6" alt="Logo" />
                         <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
                         <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
                         <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-6 rounded-2xl outline-none focus:border-blue-900" required>
                             <option value="">Tu Localidad</option>
                             {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                         </select>
-                        <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform">
+                        <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform hover:bg-blue-800">
                             Ingresar
                         </button>
                     </form>
@@ -566,7 +562,7 @@
                     <header className="bg-white p-3 shadow-sm sticky top-0 z-40">
                         <div className="max-w-2xl mx-auto flex items-center justify-between">
                             <div className="flex flex-col">
-                                <img src={LOGO_URL} className="h-12 object-contain self-start mb-1" />
+                                <img src={LOGO_URL} className="h-12 object-contain self-start mb-1" alt="Logo" />
                                 <div className="leading-tight">
                                     <p className="text-[16px] font-black text-blue-900 uppercase tracking-tighter">
                                         {cliente.nombre}
@@ -587,22 +583,22 @@
                                         setMisPedidos(data || []);
                                         setShowHistorial(true);
                                     }}
-                                    className="text-[14px] font-black text-blue-900 bg-blue-50 px-4 py-2 rounded-xl uppercase border border-blue-100 active:bg-blue-100"
+                                    className="text-[14px] font-black text-blue-900 bg-blue-50 px-4 py-2 rounded-xl uppercase border border-blue-100 active:bg-blue-100 hover:bg-blue-100"
                                 >
-                                    📋 Historial de Pedidos
+                                    📋 Historial
                                 </button>
                                 
                                 <div className="px-2 py-1 text-right">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Saldo de Cuenta</p>
-                                    <p className={`text-[16px] font-black ${saldoPendiente > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                        Saldo: ${saldoPendiente.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Saldo</p>
+                                    <p className={`text-[14px] font-black ${saldoPendiente > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                        ${saldoPendiente.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                     </p>
                                 </div>
                             </div>
                             
                             <button 
                                 onClick={() => {localStorage.clear(); location.reload();}} 
-                                className="text-[14px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100"
+                                className="text-[14px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100 hover:bg-red-100"
                             >
                                 Salir
                             </button>
@@ -624,7 +620,7 @@
                                 <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-50 text-center w-full hint-animate pointer-events-none">
                                     <div className="flex flex-col items-center">
                                         <p className="bg-blue-900 text-white px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest shadow-2xl border-2 border-white mb-1">
-                                            ¡Selecciona una categoría para comenzar!
+                                            ¡Selecciona una categoría!
                                         </p>
                                         <span className="text-4xl hand-animate inline-block">👇</span>
                                     </div>
@@ -636,9 +632,9 @@
                                     setCatOpen(!catOpen);
                                     setShowCategoryHint(false);
                                 }} 
-                                className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px] active:scale-[0.98] transition-transform"
+                                className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px] active:scale-[0.98] transition-transform hover:shadow-md"
                             >
-                                <span>📦 CATEGORÍA: {categoriaFiltro || 'SELECCIONAR'}</span>
+                                <span>📦 {categoriaFiltro || 'SELECCIONAR'}</span>
                                 <span className={`transition-transform duration-300 ${catOpen ? 'rotate-180' : ''}`}>▼</span>
                             </button>
 
@@ -654,7 +650,7 @@
                                         <button 
                                             key={c.id} 
                                             onClick={() => { setCategoriaFiltro(c.nombre); setCatOpen(false); }} 
-                                            className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase active:bg-blue-50"
+                                            className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase active:bg-blue-50 hover:bg-blue-50"
                                         >
                                             {c.nombre}
                                         </button>
@@ -667,7 +663,7 @@
                             {filtrados.length === 0 && !loading && (
                                 <div className="text-center py-20 bg-gray-50/50 rounded-[3rem] border-2 border-dashed border-gray-200">
                                     <p className="text-gray-400 font-black uppercase tracking-widest text-sm px-10">
-                                        {busqueda || categoriaFiltro ? "No hay productos disponibles" : "Selecciona una categoría para ver los productos"}
+                                        {busqueda || categoriaFiltro ? "No hay productos" : "Selecciona una categoría"}
                                     </p>
                                 </div>
                             )}
@@ -679,15 +675,14 @@
                                 const stockLabel = p.stock > 0 ? `${p.stock} unidades` : 'Sin stock';
 
                                 return (
-                                    <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-[0.98]">
-                                        <div className="absolute top-0 left-0 bg-red-500 text-white text-[8px] font-black px-3 py-1 rounded-br-xl uppercase"></div>
-
+                                    <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-[0.98] hover:shadow-md">
                                         <div 
                                             onClick={() => ampliarImagen(`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`)}
-                                            className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity"
+                                            className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity hover:bg-gray-100"
                                         >
                                             <img 
                                                 src={`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`} 
+                                                alt={p.nombre}
                                                 className="max-w-full max-h-full object-contain"
                                             />
                                         </div>
@@ -697,7 +692,6 @@
                                                 <h3 className="text-[11px] font-bold uppercase text-gray-500 leading-tight mb-1">{p.nombre}</h3>
                                                 
                                                 <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${stockColor} mb-2`}>
-                                                    <div className={`w-1.5 h-1.5 rounded-full ${stockColor.replace('text', 'bg').split(' ')[0]}`}></div>
                                                     <span className="text-[12px] font-black uppercase tracking-tighter">{stockLabel}</span>
                                                 </div>
 
@@ -709,14 +703,14 @@
 
                                             <div className="flex items-center gap-2">
                                                 <div className="flex items-center bg-gray-100 rounded-lg p-0.5 border">
-                                                    <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900">-</button>
+                                                    <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900 hover:bg-gray-200 rounded">−</button>
                                                     <span className="w-6 text-center text-xs font-black">{cantidadesTemp[p.id] || 1}</span>
-                                                    <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900">+</button>
+                                                    <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900 hover:bg-gray-200 rounded">+</button>
                                                 </div>
                                                 <button 
                                                     onClick={() => agregarAlCarrito(p)} 
                                                     disabled={p.stock <= 0}
-                                                    className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:bg-blue-800"
+                                                    className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:bg-blue-800 hover:bg-blue-800"
                                                 >
                                                     {p.stock > 0 ? 'Agregar' : 'Agotado'}
                                                 </button>
@@ -733,7 +727,7 @@
                             href="https://wa.me/5493855845002" 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="social-icon w-12 h-12 bg-[#25D366] rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform"
+                            className="social-icon w-12 h-12 bg-[#25D366] rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform hover:shadow-xl"
                             title="WhatsApp"
                         >
                             <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.47-.915-.822-1.532-1.836-1.71-2.134-.177-.298-.02-.458.134-.607.134-.134.298-.348.447-.523.15-.175.199-.299.298-.498.1-.199.05-.373-.025-.523-.075-.15-.673-1.622-.922-2.221-.241-.584-.487-.506-.673-.516-.174-.009-.373-.01-.571-.01-.198 0-.52.074-.792.372-.273.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421-7.403h-.004c-3.183 0-6.185 2.002-6.185 6.185 0 1.228.334 2.43.968 3.465l-.995 3.637 3.728-.977c1.017.553 2.163.845 3.484.845 3.183 0 6.185-2.002 6.185-6.185 0-.826-.2-1.628-.578-2.385-.377-.757-.948-1.455-1.696-2.02-.748-.563-1.646-.873-2.558-.873-.002 0-.002 0-.004 0"/></svg>
@@ -743,7 +737,7 @@
                             href="https://www.instagram.com/distribuidoraallanasgo/" 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="social-icon w-12 h-12 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform"
+                            className="social-icon w-12 h-12 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform hover:shadow-xl"
                             title="Instagram"
                         >
                             <svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.17.054 1.805.249 2.227.412.56.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.359 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.56-.479.96-.899 1.382-.42.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07s-3.588-.015-4.874-.074c-1.171-.061-1.816-.256-2.236-.421-.56-.224-.96-.479-1.379-.899-.42-.42-.679-.824-.896-1.38-.164-.42-.36-1.065-.413-2.235-.057-1.274-.07-1.649-.07-4.859s.015-3.588.074-4.874c.061-1.171.256-1.816.421-2.236.224-.56.479-.96.899-1.379.42-.42.824-.679 1.38-.896.42-.164 1.065-.36 2.235-.413 1.274-.057 1.649-.07 4.859-.07l.045.003zm0-2.163c-3.259 0-3.667.014-4.947.072-1.275.058-2.148.25-2.913.532-.789.305-1.459.714-2.126 1.38-.666.667-1.075 1.335-1.38 2.126-.282.765-.474 1.638-.532 2.913C2.014 8.333 2 8.741 2 12s.014 3.667.072 4.947c.058 1.275.25 2.148.532 2.913.305.789.714 1.459 1.38 2.126.667.666 1.335 1.075 2.126 1.38.765.282 1.638.474 2.913.532 1.28.058 1.689.072 4.947.072s3.668-.014 4.947-.072c1.275-.058 2.148-.25 2.913-.532.789-.305 1.459-.714 2.126-1.38.666-.667 1.075-1.335 1.38-2.126.282-.765.474-1.638.532-2.913.058-1.28.072-1.689.072-4.947s-.014-3.667-.072-4.947c-.058-1.275-.25-2.148-.532-2.913-.305-.789-.714-1.459-1.38-2.126C21.582 2.202 20.913 1.794 20.122 1.49c-.765-.282-1.638-.474-2.913-.532C15.667 2.014 15.259 2 12 2z"/></svg>
@@ -753,7 +747,7 @@
                             href="https://www.tiktok.com/@distribuidoraallana" 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="social-icon w-12 h-12 bg-black rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform"
+                            className="social-icon w-12 h-12 bg-black rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform hover:shadow-xl"
                             title="TikTok"
                         >
                             <svg viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.06-.03-.11-.07-.17-.1v9.91c0 .55-.021 1.1-.061 1.64.021.52.032 1.04.061 1.55 0 3.19-2.43 5.8-5.42 5.8-3 0-5.43-2.6-5.43-5.8 0-1.6.6-3.1 1.6-4.2s2.4-1.8 3.8-1.8c.56 0 1.1.1 1.6.3V9.4c-.53-.11-1.07-.15-1.6-.15-4.41 0-8 3.59-8 8s3.59 8 8 8c4.41 0 8-3.59 8-8v-5.5c2.6 1.9 5.9 3 9.6 3.2v-4.2c-3.5-.5-6.7-2-8.9-4.3-.56 4.2-4.3 7.5-8.7 7.5-4.8 0-8.7-3.9-8.7-8.7s3.9-8.7 8.7-8.7c.6 0 1.2.1 1.7.2V.02z"/></svg>
@@ -763,7 +757,7 @@
                     <div className="fixed bottom-6 right-6 z-50">
                         <button 
                             onClick={() => setShowCart(true)} 
-                            className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl flex items-center justify-center border-4 border-white transition-all ${cartAnimating ? 'animate-pop' : ''}`}
+                            className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl flex items-center justify-center border-4 border-white transition-all ${cartAnimating ? 'animate-pop' : ''} hover:shadow-xl`}
                         >
                             <span className="text-2xl">🛒</span>
                             {carrito.length > 0 && (
@@ -780,9 +774,9 @@
                                 
                                 <button 
                                     onClick={() => setShowCart(false)}
-                                    className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 transition-all"
+                                    className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 transition-all hover:bg-gray-200"
                                 >
-                                    ↑ Seguir agregando productos
+                                    ↑ Seguir agregando
                                 </button>
 
                                 <h2 className="text-2xl font-black text-blue-900 mb-6 uppercase flex justify-between items-center">
@@ -795,16 +789,16 @@
                                         <p className="text-center py-10 text-gray-400 font-bold">Tu carrito está vacío</p>
                                     ) : (
                                         carrito.map(item => (
-                                            <div key={item.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                            <div key={item.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md">
                                                 <div className="flex-1">
                                                     <p className="text-[15px] font-black uppercase text-gray-700 leading-tight mb-1">{item.nombre}</p>
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex items-center bg-white rounded-lg border shadow-sm">
-                                                            <button onClick={() => modificarCantidadCarrito(item.id, -1)} className="w-8 h-8 text-blue-900 font-black">-</button>
+                                                            <button onClick={() => modificarCantidadCarrito(item.id, -1)} className="w-8 h-8 text-blue-900 font-black hover:bg-gray-100">−</button>
                                                             <span className="w-8 text-center text-xs font-black">{item.cantidad}</span>
-                                                            <button onClick={() => modificarCantidadCarrito(item.id, 1)} className="w-8 h-8 text-blue-900 font-black">+</button>
+                                                            <button onClick={() => modificarCantidadCarrito(item.id, 1)} className="w-8 h-8 text-blue-900 font-black hover:bg-gray-100">+</button>
                                                         </div>
-                                                        <button onClick={() => eliminarDelCarrito(item.id)} className="text-red-400 text-[15px] font-bold uppercase underline">Eliminar Producto</button>
+                                                        <button onClick={() => eliminarDelCarrito(item.id)} className="text-red-400 text-[15px] font-bold uppercase underline hover:text-red-600">Eliminar</button>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
@@ -827,7 +821,7 @@
                                     <button 
                                         onClick={confirmarPedido} 
                                         disabled={carrito.length === 0}
-                                        className="w-full bg-green-600 text-white py-6 rounded-2xl font-black uppercase shadow-xl active:scale-[0.98] transition-transform disabled:bg-gray-300"
+                                        className="w-full bg-green-600 text-white py-6 rounded-2xl font-black uppercase shadow-xl active:scale-[0.98] transition-transform disabled:bg-gray-300 hover:bg-green-700"
                                     >
                                         Confirmar y Descargar PDF
                                     </button>
@@ -841,6 +835,7 @@
                             <div className="relative animate-zoom">
                                 <img 
                                     src={imgAmpliada} 
+                                    alt="Producto ampliado"
                                     className="max-w-full max-h-[70vh] rounded-3xl shadow-2xl border-4 border-white" 
                                 />
                                 <div className="absolute -bottom-12 left-0 right-0 text-center text-white font-black uppercase text-xs tracking-widest">
@@ -855,20 +850,20 @@
                             <div className="bg-white w-full max-w-md max-h-[80vh] rounded-[2rem] p-6 flex flex-col shadow-2xl">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-xl font-black text-blue-900 uppercase">Mis Pedidos</h2>
-                                    <button onClick={() => setShowHistorial(false)} className="text-gray-400 font-bold">CERRAR</button>
+                                    <button onClick={() => setShowHistorial(false)} className="text-gray-400 font-bold hover:text-gray-600">✕</button>
                                 </div>
                                 
                                 <div className="overflow-y-auto space-y-3 no-scrollbar">
                                     {misPedidos.length === 0 ? (
                                         <p className="text-center py-10 text-gray-400">
-                                            No tienes pedidos anteriores.
+                                            No tienes pedidos.
                                         </p>
                                     ) : (
                                         misPedidos.map(p => {
                                             const { total, pagado, saldo, estado } = calcularEstadoPedido(p);
 
                                             return (
-                                                <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                                <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div>
                                                             <p className="text-[10px] font-black text-gray-400 uppercase">
@@ -895,7 +890,9 @@
             );
         }
 
-        ReactDOM.render(<App />, document.getElementById('root'));
+        // Renderizar la aplicación
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>

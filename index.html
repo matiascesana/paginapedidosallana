@@ -89,8 +89,7 @@
         const { createRoot } = window.ReactDOM;
 
         const SUPABASE_URL = "https://ejbqlejlgprvwzrptojo.supabase.co";
-        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqYnFsZWpsZ3Bydnd6cnB0b2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMjkwMjIsImV4cCI6MjA3MjYwNTAyMn0.9fVItJka0MN3nlfowVudIE0AuNmfTJGQcbbqpau2Th8
-";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqYnFsZWpsZ3Bydnd6cnB0b2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMjkwMjIsImV4cCI6MjA3MjYwNTAyMn0.9fVItJka0MN3nlfowVudIE0AuNmfTJGQcbbqpau2Th8";
         const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const LOGO_URL = "https://rgbjinmllhhymczumwhs.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
 
@@ -633,7 +632,7 @@
                                     setCatOpen(!catOpen);
                                     setShowCategoryHint(false);
                                 }} 
-                                className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px] active:scale-[0.98] transition-transform hover:shadow-md"
+                                className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px] active:scale-95 transition-transform"
                             >
                                 <span>📦 {categoriaFiltro || 'SELECCIONAR'}</span>
                                 <span className={`transition-transform duration-300 ${catOpen ? 'rotate-180' : ''}`}>▼</span>
@@ -676,10 +675,10 @@
                                 const stockLabel = p.stock > 0 ? `${p.stock} unidades` : 'Sin stock';
 
                                 return (
-                                    <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-[0.98] hover:shadow-md">
+                                    <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-95">
                                         <div 
                                             onClick={() => ampliarImagen(`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`)}
-                                            className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity hover:bg-gray-100"
+                                            className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity hover:shadow-md"
                                         >
                                             <img 
                                                 src={`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`} 
@@ -711,7 +710,7 @@
                                                 <button 
                                                     onClick={() => agregarAlCarrito(p)} 
                                                     disabled={p.stock <= 0}
-                                                    className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:bg-blue-800 hover:bg-blue-800"
+                                                    className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:scale-95 hover:bg-blue-800"
                                                 >
                                                     {p.stock > 0 ? 'Agregar' : 'Agotado'}
                                                 </button>
@@ -731,7 +730,7 @@
                             className="social-icon w-12 h-12 bg-[#25D366] rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform hover:shadow-xl"
                             title="WhatsApp"
                         >
-                            <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.47-.915-.822-1.532-1.836-1.71-2.134-.177-.298-.02-.458.134-.607.134-.134.298-.348.447-.523.15-.175.199-.299.298-.498.1-.199.05-.373-.025-.523-.075-.15-.673-1.622-.922-2.221-.241-.584-.487-.506-.673-.516-.174-.009-.373-.01-.571-.01-.198 0-.52.074-.792.372-.273.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421-7.403h-.004c-3.183 0-6.185 2.002-6.185 6.185 0 1.228.334 2.43.968 3.465l-.995 3.637 3.728-.977c1.017.553 2.163.845 3.484.845 3.183 0 6.185-2.002 6.185-6.185 0-.826-.2-1.628-.578-2.385-.377-.757-.948-1.455-1.696-2.02-.748-.563-1.646-.873-2.558-.873-.002 0-.002 0-.004 0"/></svg>
+                            <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.148-1.255-.413-2.393-1.476-.887-.79-1.49-1.771-1.663-2.059-.173-.287-.018-.441.13-.584.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.076 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421-7.403h-.004c-1.025 0-2.031.253-2.942.734l-.212.125-2.195-.576.584 2.143-.138.22c-.53.844-.809 1.82-.809 2.884 0 3.308 2.692 6 6 6 1.6 0 3.105-.636 4.242-1.789 1.137-1.153 1.766-2.687 1.766-4.211 0-3.309-2.692-6-6-6m0-1.432c1.331 0 2.59.326 3.717.954l.265.157 2.756-.722-.702 2.565.169.272c.666 1.075 1.019 2.32 1.019 3.706 0 4.411-3.589 8-8 8-1.488 0-2.882-.384-4.089-1.056l-.28-.168-2.904.761.733-2.685-.18-.29C2.956 15.545 2.5 14.095 2.5 12.571c0-4.411 3.589-8 8-8Z"/></svg>
                         </a>
 
                         <a 
@@ -741,7 +740,7 @@
                             className="social-icon w-12 h-12 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform hover:shadow-xl"
                             title="Instagram"
                         >
-                            <svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.17.054 1.805.249 2.227.412.56.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.359 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.56-.479.96-.899 1.382-.42.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07s-3.588-.015-4.874-.074c-1.171-.061-1.816-.256-2.236-.421-.56-.224-.96-.479-1.379-.899-.42-.42-.679-.824-.896-1.38-.164-.42-.36-1.065-.413-2.235-.057-1.274-.07-1.649-.07-4.859s.015-3.588.074-4.874c.061-1.171.256-1.816.421-2.236.224-.56.479-.96.899-1.379.42-.42.824-.679 1.38-.896.42-.164 1.065-.36 2.235-.413 1.274-.057 1.649-.07 4.859-.07l.045.003zm0-2.163c-3.259 0-3.667.014-4.947.072-1.275.058-2.148.25-2.913.532-.789.305-1.459.714-2.126 1.38-.666.667-1.075 1.335-1.38 2.126-.282.765-.474 1.638-.532 2.913C2.014 8.333 2 8.741 2 12s.014 3.667.072 4.947c.058 1.275.25 2.148.532 2.913.305.789.714 1.459 1.38 2.126.667.666 1.335 1.075 2.126 1.38.765.282 1.638.474 2.913.532 1.28.058 1.689.072 4.947.072s3.668-.014 4.947-.072c1.275-.058 2.148-.25 2.913-.532.789-.305 1.459-.714 2.126-1.38.666-.667 1.075-1.335 1.38-2.126.282-.765.474-1.638.532-2.913.058-1.28.072-1.689.072-4.947s-.014-3.667-.072-4.947c-.058-1.275-.25-2.148-.532-2.913-.305-.789-.714-1.459-1.38-2.126C21.582 2.202 20.913 1.794 20.122 1.49c-.765-.282-1.638-.474-2.913-.532C15.667 2.014 15.259 2 12 2z"/></svg>
+                            <svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.17.054 1.805.249 2.227.412.56.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.359 1.057.413 2.227.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.054 1.17-.249 1.805-.412 2.227-.217.56-.477.96-.896 1.382-.42.419-.819.679-1.381.896-.422.164-1.057.359-2.227.413-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.17-.054-1.805-.249-2.227-.412-.56-.217-.96-.477-1.382-.896-.419-.42-.679-.819-.896-1.381-.164-.422-.359-1.057-.413-2.227-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.054-1.17.249-1.805.412-2.227.217-.56.477-.96.896-1.382.42-.419.819-.679 1.381-.896.422-.164 1.057-.359 2.227-.413 1.266-.058 1.646-.07 4.85-.07M12 0C8.741 0 8.333.014 7.053.072 5.775.13 4.902.333 4.151.63c-.789.306-1.459.717-2.126 1.384S.766 3.362.46 4.151C.163 4.902 0 5.775-.058 7.053.014 8.333 0 8.741 0 12s.014 3.667.072 4.947c.058 1.277.261 2.148.558 2.899.306.789.717 1.459 1.384 2.126.667.667 1.337 1.078 2.126 1.384.751.297 1.622.5 2.899.558 1.28.058 1.688.072 4.947.072s3.667-.014 4.947-.072c1.277-.058 2.148-.261 2.899-.558.789-.306 1.459-.717 2.126-1.384.667-.667 1.078-1.337 1.384-2.126.297-.751.5-1.622.558-2.899.058-1.28.072-1.688.072-4.947s-.014-3.667-.072-4.947c-.058-1.277-.261-2.148-.558-2.899-.306-.789-.717-1.459-1.384-2.126-.667-.667-1.337-1.078-2.126-1.384-.751-.297-1.622-.5-2.899-.558C15.667.014 15.259 0 12 0Zm0 5.838a6.162 6.162 0 1 1 0 12.324 6.162 6.162 0 0 1 0-12.324ZM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm4.965-10.322a1.44 1.44 0 1 1 0-2.88 1.44 1.44 0 0 1 0 2.88Z"/></svg>
                         </a>
 
                         <a 
@@ -751,14 +750,14 @@
                             className="social-icon w-12 h-12 bg-black rounded-full shadow-lg flex items-center justify-center border-2 border-white active:scale-90 transition-transform hover:shadow-xl"
                             title="TikTok"
                         >
-                            <svg viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.06-.03-.11-.07-.17-.1v9.91c0 .55-.021 1.1-.061 1.64.021.52.032 1.04.061 1.55 0 3.19-2.43 5.8-5.42 5.8-3 0-5.43-2.6-5.43-5.8 0-1.6.6-3.1 1.6-4.2s2.4-1.8 3.8-1.8c.56 0 1.1.1 1.6.3V9.4c-.53-.11-1.07-.15-1.6-.15-4.41 0-8 3.59-8 8s3.59 8 8 8c4.41 0 8-3.59 8-8v-5.5c2.6 1.9 5.9 3 9.6 3.2v-4.2c-3.5-.5-6.7-2-8.9-4.3-.56 4.2-4.3 7.5-8.7 7.5-4.8 0-8.7-3.9-8.7-8.7s3.9-8.7 8.7-8.7c.6 0 1.2.1 1.7.2V.02z"/></svg>
+                            <svg viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.06-.03-.11-.06-.16-.09-.04 2.52.01 5.05-.03 7.56 0 .55-.05 1.1-.1 1.63-.07.87-.31 1.73-.71 2.5-.4.75-.98 1.41-1.64 1.93-.84.74-1.86 1.23-2.94 1.44-1.08.21-2.19.2-3.27-.04-.84-.2-1.64-.55-2.34-1.04-.7-.48-1.28-1.1-1.74-1.82-.46-.72-.77-1.53-.93-2.37-.17-1.08-.16-2.18 0-3.26.24-1.74.94-3.4 2-4.66 1.06-1.26 2.55-2.1 4.16-2.4 1.61-.3 3.26-.15 4.84.44l1.5-3.6c.1-.25.13-.53.09-.8-.04-.27-.15-.53-.33-.74-.18-.21-.42-.35-.67-.41-1.45-.46-2.93-.65-4.4-.57zm-5.7 6.12c-.96 1.12-1.6 2.53-1.68 4.01-.08 1.48.25 2.95 1.06 4.23.81 1.28 2.03 2.3 3.44 2.88 1.41.57 3.01.66 4.5.24 1.49-.42 2.83-1.35 3.75-2.63.92-1.28 1.39-2.9 1.34-4.52-.05-1.62-.62-3.2-1.66-4.47-.96-1.12-2.4-1.85-3.95-1.98l-.03 3.6c.35.11.67.34.9.65.23.31.36.68.37 1.06.01.38-.1.76-.32 1.08-.22.32-.55.56-.92.67-.37.11-.77.09-1.13-.06-.36-.15-.67-.43-.85-.79-.18-.36-.22-.78-.11-1.17l3.88-1.12c.36-.1.68-.33.89-.65.21-.32.29-.71.23-1.09-.06-.38-.27-.72-.57-.93-.3-.21-.69-.31-1.08-.27-1.77.24-3.5 1.14-4.75 2.52z"/></svg>
                         </a>
                     </div>
 
                     <div className="fixed bottom-6 right-6 z-50">
                         <button 
                             onClick={() => setShowCart(true)} 
-                            className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl flex items-center justify-center border-4 border-white transition-all ${cartAnimating ? 'animate-pop' : ''} hover:shadow-xl`}
+                            className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl flex items-center justify-center border-4 border-white transition-all ${cartAnimating ? 'animate-pop' : ''} hover:bg-blue-800`}
                         >
                             <span className="text-2xl">🛒</span>
                             {carrito.length > 0 && (
@@ -775,7 +774,7 @@
                                 
                                 <button 
                                     onClick={() => setShowCart(false)}
-                                    className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 transition-all hover:bg-gray-200"
+                                    className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 hover:bg-gray-200"
                                 >
                                     ↑ Seguir agregando
                                 </button>

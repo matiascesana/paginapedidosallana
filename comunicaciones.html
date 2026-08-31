@@ -59,6 +59,8 @@
             const [cliente, setCliente] = useState(null);
             const [localidades, setLocalidades] = useState([]);
             const [novedades, setNovedades] = useState([]);
+            const [boletin, setBoletin] = useState(null);
+            const [showPdf, setShowPdf] = useState(false);
             const [loading, setLoading] = useState(true);
             const [refrescando, setRefrescando] = useState(false);
             const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -105,8 +107,20 @@
                     }
                 }
                 fetchLocalidades();
+                fetchBoletin();
                 setLoading(false);
             }, []);
+
+            // Trae el estado del boletín/catálogo mensual en PDF (una sola fila).
+            async function fetchBoletin() {
+                try {
+                    const { data, error } = await sb.from('boletin_mensual').select('*').eq('id', 1).maybeSingle();
+                    if (error) throw error;
+                    if (data && data.pdf_url) setBoletin(data);
+                } catch (err) {
+                    console.error('Error cargando boletín:', err);
+                }
+            }
 
             async function fetchLocalidades() {
                 const { data } = await sb.from('localidades').select('id, nombre').order('nombre');
@@ -127,6 +141,9 @@
                         .order('created_at', { ascending: false });
                     if (error) throw error;
                     setNovedades(data || []);
+                    // Marca como "visto" para que el globito rojo en la app
+                    // de Pedidos desaparezca (comparten el mismo localStorage).
+                    localStorage.setItem(`novedades_last_seen_${datosCliente.dni}`, new Date().toISOString());
                 } catch (err) {
                     console.error('Error cargando novedades:', err);
                 } finally {
@@ -218,6 +235,24 @@
                     <div className="accent-line"></div>
 
                     <main className="p-4 flex-grow max-w-2xl mx-auto w-full">
+                        {boletin && (
+                            <div className="bg-white p-5 rounded-2xl border-2 border-blue-900/10 shadow-sm mb-4 flex items-center justify-between gap-3 card-in">
+                                <div>
+                                    <p className="text-[10px] font-black text-blue-900/50 uppercase tracking-widest">Catálogo del mes</p>
+                                    <p className="font-black text-blue-900 text-sm">📄 {boletin.nombre_archivo || 'Boletín mensual'}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold mt-0.5">
+                                        Actualizado el {new Date(boletin.updated_at).toLocaleDateString('es-AR')}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setShowPdf(true)}
+                                    className="bg-blue-900 text-white text-[11px] font-black uppercase px-4 py-3 rounded-xl whitespace-nowrap hover:bg-blue-800 transition-colors"
+                                >
+                                    👁️ Ver
+                                </button>
+                            </div>
+                        )}
+
                         <div className="flex justify-end mb-3">
                             <button
                                 onClick={() => fetchNovedades(cliente)}
@@ -252,6 +287,13 @@
                                                         </span>
                                                     </div>
                                                     <p className="text-[13px] text-gray-600 whitespace-pre-line leading-relaxed">{n.mensaje}</p>
+                                                    {n.imagen_url && (
+                                                        <img
+                                                            src={n.imagen_url}
+                                                            alt={n.titulo || 'Producto'}
+                                                            className="w-full max-h-64 object-cover rounded-xl mt-3 border border-gray-100"
+                                                        />
+                                                    )}
                                                     <p className="text-[10px] text-gray-300 font-bold mt-3">
                                                         {new Date(n.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                                                     </p>
@@ -263,6 +305,22 @@
                             ))
                         )}
                     </main>
+
+                    {showPdf && boletin && (
+                        <div className="fixed inset-0 bg-black/80 z-50 flex flex-col p-3" onClick={() => setShowPdf(false)}>
+                            <div className="bg-white rounded-2xl overflow-hidden flex flex-col flex-grow shadow-2xl" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-center p-3 border-b border-gray-100 bg-blue-900">
+                                    <span className="text-white font-black text-xs uppercase truncate">{boletin.nombre_archivo || 'Boletín mensual'}</span>
+                                    <button onClick={() => setShowPdf(false)} className="text-white font-black bg-white/15 px-3 py-1.5 rounded-lg text-xs">Cerrar ✕</button>
+                                </div>
+                                <iframe
+                                    title="Boletín mensual"
+                                    className="flex-grow w-full"
+                                    src={`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(boletin.pdf_url + '?v=' + new Date(boletin.updated_at).getTime())}`}
+                                ></iframe>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }

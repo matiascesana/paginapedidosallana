@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Novedades - Distribuidora Allana</title>
+
+    <!-- PWA: esto es lo que permite "instalar" la app en el celular -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#172554">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Novedades">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.4"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap');
+        body { font-family: 'Manrope', 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #F7F8FA; }
+        h1, h2, h3 { font-family: 'Plus Jakarta Sans', 'Manrope', sans-serif; letter-spacing: -0.01em; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .brand-gradient { background: linear-gradient(135deg, #172554 0%, #1e3a8a 55%, #1d4ed8 100%); }
+        .accent-line { height: 4px; background: linear-gradient(90deg, #172554, #2563eb, #38bdf8); }
+        @keyframes fadeInPage { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .page-fade { animation: fadeInPage 0.4s ease-out; }
+        @keyframes slideUp { from { transform: translateY(16px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+        .card-in { animation: slideUp 0.35s ease-out; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = window.React;
+        const { createRoot } = window.ReactDOM;
+
+        // Mismo proyecto de Supabase que la app de Pedidos.
+        const SUPABASE_URL = "https://rgbjinmllhhymczumwhs.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJnYmppbm1sbGhoeW1jenVtd2hzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNDA5MDcsImV4cCI6MjA3ODYxNjkwN30.y7uSk4gEVJNbPvuLDC0ZXOyA8OhogptbKAofodxgV1w";
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const LOGO_URL = "https://rgbjinmllhhymczumwhs.supabase.co/storage/v1/object/public/promo_images/logodistribuidora.png";
+
+        // Registro del service worker (necesario para que Chrome/Android
+        // ofrezca "Instalar app"). Si falla (ej. abierto como file://) no rompe nada.
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.warn('No se pudo registrar el service worker:', err);
+                });
+            });
+        }
+
+        function App() {
+            const [cliente, setCliente] = useState(null);
+            const [localidades, setLocalidades] = useState([]);
+            const [novedades, setNovedades] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [refrescando, setRefrescando] = useState(false);
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+            const [showInstallBtn, setShowInstallBtn] = useState(false);
+            const [isStandalone, setIsStandalone] = useState(false);
+
+            // Detecta si ya está instalada (abierta en modo standalone)
+            useEffect(() => {
+                const standalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+                setIsStandalone(standalone);
+            }, []);
+
+            // Captura el evento nativo de instalación (Android/Chrome/Edge)
+            useEffect(() => {
+                const handler = (e) => {
+                    e.preventDefault();
+                    setDeferredPrompt(e);
+                    setShowInstallBtn(true);
+                };
+                window.addEventListener('beforeinstallprompt', handler);
+                return () => window.removeEventListener('beforeinstallprompt', handler);
+            }, []);
+
+            const instalarApp = async () => {
+                if (!deferredPrompt) return;
+                deferredPrompt.prompt();
+                await deferredPrompt.userChoice;
+                setDeferredPrompt(null);
+                setShowInstallBtn(false);
+            };
+
+            // Usa la MISMA sesión que la app de Pedidos (misma clave de localStorage),
+            // así el cliente no tiene que loguearse dos veces si ya lo hizo ahí.
+            useEffect(() => {
+                const session = localStorage.getItem('distribuidora_session');
+                if (session) {
+                    try {
+                        const datos = JSON.parse(session);
+                        setCliente(datos);
+                        fetchNovedades(datos);
+                    } catch (e) {
+                        console.error('Error leyendo sesión guardada');
+                    }
+                }
+                fetchLocalidades();
+                setLoading(false);
+            }, []);
+
+            async function fetchLocalidades() {
+                const { data } = await sb.from('localidades').select('id, nombre').order('nombre');
+                setLocalidades(data || []);
+            }
+
+            // Trae todas las novedades que apliquen a este cliente:
+            // - dirigidas a "todos"
+            // - dirigidas a su localidad (zona)
+            // - dirigidas individualmente a su DNI
+            async function fetchNovedades(datosCliente) {
+                setRefrescando(true);
+                try {
+                    const filtro = `target_type.eq.todos,and(target_type.eq.zona,target_localidad_id.eq.${datosCliente.localidad_id}),and(target_type.eq.individual,target_dni.eq.${datosCliente.dni})`;
+                    const { data, error } = await sb.from('novedades')
+                        .select('*')
+                        .or(filtro)
+                        .order('created_at', { ascending: false });
+                    if (error) throw error;
+                    setNovedades(data || []);
+                } catch (err) {
+                    console.error('Error cargando novedades:', err);
+                } finally {
+                    setRefrescando(false);
+                }
+            }
+
+            // Agrupa el feed por fecha (día) para mostrarlo como un historial
+            // con encabezados de fecha, tipo timeline scrolleable.
+            const gruposPorFecha = useMemo(() => {
+                const grupos = {};
+                novedades.forEach(n => {
+                    const fecha = new Date(n.created_at).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                    if (!grupos[fecha]) grupos[fecha] = [];
+                    grupos[fecha].push(n);
+                });
+                return grupos;
+            }, [novedades]);
+
+            const etiquetaTarget = (n) => {
+                if (n.target_type === 'todos') return { texto: '📢 Para todos', color: 'bg-blue-100 text-blue-700' };
+                if (n.target_type === 'zona') return { texto: '📍 Zona', color: 'bg-amber-100 text-amber-700' };
+                return { texto: '👤 Para vos', color: 'bg-emerald-100 text-emerald-700' };
+            };
+
+            if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse">CARGANDO...</div>;
+
+            if (!cliente) return (
+                <div className="min-h-screen brand-gradient flex items-center justify-center p-6 relative overflow-hidden">
+                    <div className="absolute -top-24 -right-24 w-72 h-72 bg-white/5 rounded-full blur-3xl"></div>
+                    <div className="absolute -bottom-32 -left-16 w-80 h-80 bg-sky-400/10 rounded-full blur-3xl"></div>
+
+                    <form onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = e.target;
+                        const datos = {
+                            nombre: form.nombre.value,
+                            dni: form.dni.value,
+                            localidad_id: form.localidad.value,
+                            localidad_nombre: form.localidad.options[form.localidad.selectedIndex].text
+                        };
+                        setCliente(datos);
+                        localStorage.setItem('distribuidora_session', JSON.stringify(datos));
+                        fetchNovedades(datos);
+                    }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl relative z-10 page-fade">
+                        <img src={LOGO_URL} className="w-40 mb-6" alt="Logo" />
+                        <h1 className="text-blue-900 font-black uppercase text-sm tracking-widest mb-6">Novedades</h1>
+                        <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-3 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required />
+                        <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-3 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required />
+                        <select name="localidad" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-6 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required>
+                            <option value="">Tu Localidad</option>
+                            {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                        </select>
+                        <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-blue-900/30 hover:bg-blue-800">
+                            Ingresar
+                        </button>
+                    </form>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen flex flex-col pb-10">
+                    <header className="brand-gradient p-6 pb-8 text-white sticky top-0 z-20 shadow-lg">
+                        <div className="max-w-2xl mx-auto flex items-center justify-between mb-1">
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">Distribuidora Allana</p>
+                                <h1 className="text-2xl font-black uppercase leading-tight">Novedades</h1>
+                            </div>
+                            <button
+                                onClick={() => { localStorage.removeItem('distribuidora_session'); location.reload(); }}
+                                className="text-[11px] font-black text-white/70 bg-white/10 px-3 py-2 rounded-xl uppercase border border-white/20 hover:bg-white/20 transition-colors"
+                            >
+                                Salir
+                            </button>
+                        </div>
+                        <p className="text-white/70 text-xs font-bold">
+                            {cliente.nombre} · {cliente.localidad_nombre}
+                        </p>
+
+                        {showInstallBtn && !isStandalone && (
+                            <button
+                                onClick={instalarApp}
+                                className="mt-4 w-full bg-white text-blue-900 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-transform"
+                            >
+                                ⬇️ Instalar esta App en el celular
+                            </button>
+                        )}
+                    </header>
+                    <div className="accent-line"></div>
+
+                    <main className="p-4 flex-grow max-w-2xl mx-auto w-full">
+                        <div className="flex justify-end mb-3">
+                            <button
+                                onClick={() => fetchNovedades(cliente)}
+                                className="text-[11px] font-black text-blue-900 bg-blue-50 px-3 py-2 rounded-xl uppercase border border-blue-100 hover:bg-blue-100 transition-colors"
+                            >
+                                {refrescando ? 'Actualizando...' : '🔄 Actualizar'}
+                            </button>
+                        </div>
+
+                        {novedades.length === 0 ? (
+                            <div className="text-center py-24 text-gray-400">
+                                <p className="text-4xl mb-3">📭</p>
+                                <p className="font-bold">Todavía no hay novedades para vos.</p>
+                            </div>
+                        ) : (
+                            Object.entries(gruposPorFecha).map(([fecha, items]) => (
+                                <div key={fecha} className="mb-6">
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2 pl-1">
+                                        {fecha}
+                                    </p>
+                                    <div className="space-y-3">
+                                        {items.map(n => {
+                                            const tag = etiquetaTarget(n);
+                                            return (
+                                                <div key={n.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm card-in">
+                                                    <div className="flex justify-between items-start mb-2 gap-2">
+                                                        {n.titulo && (
+                                                            <h3 className="font-black text-blue-900 text-[15px] leading-tight">{n.titulo}</h3>
+                                                        )}
+                                                        <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase whitespace-nowrap ${tag.color}`}>
+                                                            {tag.texto}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[13px] text-gray-600 whitespace-pre-line leading-relaxed">{n.mensaje}</p>
+                                                    <p className="text-[10px] text-gray-300 font-bold mt-3">
+                                                        {new Date(n.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                                                    </p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

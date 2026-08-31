@@ -127,6 +127,7 @@
             const [showCategoryHint, setShowCategoryHint] = useState(false);
             // Pedido cuyo detalle se está mostrando en el modal del historial
             const [detallePedido, setDetallePedido] = useState(null);
+            const [novedadesSinLeer, setNovedadesSinLeer] = useState(0);
             const [idPedidoEditando, setIdPedidoEditando] = useState(null);
             const [imgAmpliada, setImgAmpliada] = useState(null);
             const [cartAnimating, setCartAnimating] = useState(false);
@@ -251,9 +252,40 @@
                     const datosSesion = JSON.parse(session);
                     setCliente(datosSesion);
                     fetchMisPedidos(datosSesion.dni);
+                    fetchNovedadesSinLeer(datosSesion);
                 }
                 fetchData();
             }, []);
+
+            // Cuenta las novedades (mensajes de la app de Novedades) que le
+            // corresponden a este cliente y que todavía no vio, para mostrar
+            // el globito rojo sobre el banner "Descargá la App". No hay push
+            // real: esto es lo más cercano a un aviso sin abrir la otra app.
+            async function fetchNovedadesSinLeer(datosCliente) {
+                try {
+                    const lastSeen = localStorage.getItem(`novedades_last_seen_${datosCliente.dni}`) || '1970-01-01';
+                    const filtro = `target_type.eq.todos,and(target_type.eq.zona,target_localidad_id.eq.${datosCliente.localidad_id}),and(target_type.eq.individual,target_dni.eq.${datosCliente.dni})`;
+                    const { count, error } = await sb.from('novedades')
+                        .select('id', { count: 'exact', head: true })
+                        .or(filtro)
+                        .gt('created_at', lastSeen);
+                    if (error) throw error;
+                    setNovedadesSinLeer(count || 0);
+                } catch (err) {
+                    console.error('Error contando novedades sin leer:', err);
+                }
+            }
+
+            // Si el cliente abre la app de Novedades en otra pestaña y vuelve,
+            // recalculamos el globito al recuperar el foco (localStorage es
+            // compartido entre ambas apps si están en el mismo dominio).
+            useEffect(() => {
+                const onFocus = () => {
+                    if (cliente) fetchNovedadesSinLeer(cliente);
+                };
+                window.addEventListener('focus', onFocus);
+                return () => window.removeEventListener('focus', onFocus);
+            }, [cliente]);
 
             // Trae SIEMPRE todos los pedidos del cliente (activos y archivados),
             // para que el historial y el saldo pendiente estén completos apenas
@@ -639,6 +671,7 @@
                         setCliente(datos);
                         localStorage.setItem('distribuidora_session', JSON.stringify(datos));
                         fetchMisPedidos(datos.dni);
+                        fetchNovedadesSinLeer(datos);
                     }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl relative z-10 page-fade">
                         <img src={LOGO_URL} className="w-40 mb-6" alt="Logo" />
                         <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-3 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required />
@@ -713,12 +746,17 @@
                             href="./comunicaciones.html"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center justify-between bg-blue-900 text-white p-4 rounded-2xl shadow-md hover:bg-blue-800 transition-colors"
+                            className="relative flex items-center justify-between bg-blue-900 text-white p-4 rounded-2xl shadow-md hover:bg-blue-800 transition-colors"
                         >
                             <span className="text-[12px] font-black uppercase tracking-tight">
                                 📢 Enterate de nuestras novedades — Descargá la App
                             </span>
                             <span className="text-[11px] font-black bg-white/15 px-3 py-1.5 rounded-lg">Abrir ↗</span>
+                            {novedadesSinLeer > 0 && (
+                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-white">
+                                    {novedadesSinLeer > 9 ? '9+' : novedadesSinLeer}
+                                </span>
+                            )}
                         </a>
                     </div>
 

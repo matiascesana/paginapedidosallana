@@ -55,6 +55,38 @@
             });
         }
 
+        // Miniatura de una novedad: muestra un placeholder mientras carga,
+        // un aviso claro si la imagen falla (en vez de desaparecer en silencio),
+        // y permite tocarla para verla ampliada a pantalla completa.
+        function NovedadImagen({ src, alt, onAmpliar }) {
+            const [estado, setEstado] = React.useState('cargando'); // 'cargando' | 'ok' | 'error'
+
+            return (
+                <div className="relative w-full mt-3 rounded-xl overflow-hidden border border-gray-100 bg-gray-50">
+                    {estado === 'cargando' && (
+                        <div className="absolute inset-0 flex items-center justify-center animate-pulse bg-gray-100">
+                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Cargando imagen…</span>
+                        </div>
+                    )}
+                    {estado === 'error' ? (
+                        <div className="flex flex-col items-center justify-center gap-1 py-8 text-gray-400">
+                            <span className="text-2xl">🖼️</span>
+                            <span className="text-[11px] font-bold uppercase tracking-widest">No se pudo cargar la imagen</span>
+                        </div>
+                    ) : (
+                        <img
+                            src={src}
+                            alt={alt}
+                            onLoad={() => setEstado('ok')}
+                            onError={() => setEstado('error')}
+                            onClick={() => estado === 'ok' && onAmpliar(src)}
+                            className={`w-full max-h-64 object-cover transition-opacity duration-300 ${estado === 'ok' ? 'opacity-100 cursor-zoom-in active:opacity-80' : 'opacity-0'}`}
+                        />
+                    )}
+                </div>
+            );
+        }
+
         function App() {
             const [cliente, setCliente] = useState(null);
             const [localidades, setLocalidades] = useState([]);
@@ -66,6 +98,7 @@
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             const [showInstallBtn, setShowInstallBtn] = useState(false);
             const [isStandalone, setIsStandalone] = useState(false);
+            const [imagenAmpliada, setImagenAmpliada] = useState(null);
 
             // Detecta si ya está instalada (abierta en modo standalone)
             useEffect(() => {
@@ -288,10 +321,10 @@
                                                     </div>
                                                     <p className="text-[13px] text-gray-600 whitespace-pre-line leading-relaxed">{n.mensaje}</p>
                                                     {n.imagen_url && (
-                                                        <img
+                                                        <NovedadImagen
                                                             src={n.imagen_url}
                                                             alt={n.titulo || 'Producto'}
-                                                            className="w-full max-h-64 object-cover rounded-xl mt-3 border border-gray-100"
+                                                            onAmpliar={setImagenAmpliada}
                                                         />
                                                     )}
                                                     <p className="text-[10px] text-gray-300 font-bold mt-3">
@@ -318,6 +351,21 @@
                                     className="flex-grow w-full"
                                     src={`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(boletin.pdf_url + '?v=' + new Date(boletin.updated_at).getTime())}`}
                                 ></iframe>
+                            </div>
+                        </div>
+                    )}
+                    {imagenAmpliada && (
+                        <div className="fixed inset-0 bg-black/90 z-50 flex flex-col p-3" onClick={() => setImagenAmpliada(null)}>
+                            <div className="flex justify-end mb-2">
+                                <button onClick={() => setImagenAmpliada(null)} className="text-white font-black bg-white/15 px-3 py-1.5 rounded-lg text-xs">Cerrar ✕</button>
+                            </div>
+                            <div className="flex-grow flex items-center justify-center overflow-auto">
+                                <img
+                                    src={imagenAmpliada}
+                                    alt="Imagen ampliada"
+                                    className="max-w-full max-h-full object-contain rounded-lg"
+                                    onClick={e => e.stopPropagation()}
+                                />
                             </div>
                         </div>
                     )}

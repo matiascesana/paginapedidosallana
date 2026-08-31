@@ -12,9 +12,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap');
-        body { font-family: 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; }
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap');
+        body { font-family: 'Manrope', 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #F7F8FA; }
+        h1, h2, h3 { font-family: 'Plus Jakarta Sans', 'Manrope', sans-serif; letter-spacing: -0.01em; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .brand-gradient { background: linear-gradient(135deg, #172554 0%, #1e3a8a 55%, #1d4ed8 100%); }
+        .accent-line { height: 4px; background: linear-gradient(90deg, #172554, #2563eb, #38bdf8); }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .modal-enter { animation: slideUp 0.3s ease-out; }
         .pop-effect { animation: productPop 0.3s ease-out; }
@@ -79,6 +82,12 @@
         .hand-animate {
             animation: bounceHand 0.8s infinite ease-in-out;
         }
+
+        @keyframes fadeInPage {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .page-fade { animation: fadeInPage 0.4s ease-out; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -103,11 +112,14 @@
             const [localidades, setLocalidades] = useState([]);
             const [productos, setProductos] = useState([]);
             const [categorias, setCategorias] = useState([]);
+            const [tipos, setTipos] = useState([]);
             const [carrito, setCarrito] = useState([]);
             const [loading, setLoading] = useState(true);
             const [busqueda, setBusqueda] = useState('');
             const [categoriaFiltro, setCategoriaFiltro] = useState(null);
+            const [tipoFiltro, setTipoFiltro] = useState(null);
             const [catOpen, setCatOpen] = useState(false);
+            const [tipoOpen, setTipoOpen] = useState(false);
             const [showCart, setShowCart] = useState(false);
             const [cantidadesTemp, setCantidadesTemp] = useState({});
             const [showHistorial, setShowHistorial] = useState(false);
@@ -119,6 +131,9 @@
             const [idPedidoEditando, setIdPedidoEditando] = useState(null);
             const [imgAmpliada, setImgAmpliada] = useState(null);
             const [cartAnimating, setCartAnimating] = useState(false);
+            // Bloqueo para evitar doble envío (doble tap en mobile), que duplicaría
+            // el pedido y descontaría el stock dos veces.
+            const [isProcessingOrder, setIsProcessingOrder] = useState(false);
 
             const saldoPendiente = useMemo(() => {
                 const totalPedidos = misPedidos.reduce((acc, p) => {
@@ -167,6 +182,19 @@
                         console.error("Error recuperando carrito");
                     }
                 }
+                // CRÍTICO: restauramos también qué pedido se estaba editando.
+                // Si esto no se restaura junto con el carrito, al recargar la página
+                // a mitad de una edición, el próximo "Confirmar" cree un pedido
+                // nuevo y descuente el stock por segunda vez sobre los mismos ítems.
+                const savedEditId = localStorage.getItem('distribuidora_pedido_editando');
+                if (savedEditId) {
+                    try {
+                        const parsedId = JSON.parse(savedEditId);
+                        if (parsedId) setIdPedidoEditando(parsedId);
+                    } catch (e) {
+                        console.error("Error recuperando id de pedido en edición");
+                    }
+                }
             }, []);
 
             useEffect(() => {
@@ -174,29 +202,40 @@
             }, [carrito]);
 
             useEffect(() => {
+                // Mantenemos sincronizado en localStorage cuál pedido se está editando,
+                // en el mismo lugar y con el mismo ciclo de vida que el carrito.
+                if (idPedidoEditando) {
+                    localStorage.setItem('distribuidora_pedido_editando', JSON.stringify(idPedidoEditando));
+                } else {
+                    localStorage.removeItem('distribuidora_pedido_editando');
+                }
+            }, [idPedidoEditando]);
+
+            useEffect(() => {
                 const handlePopState = (e) => {
-                    if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen) {
+                    if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen || tipoOpen) {
                         setShowCart(false);
                         setShowHistorial(false);
                         setImgAmpliada(null);
                         setShowModalLogin(false);
                         setCatOpen(false);
+                        setTipoOpen(false);
                         history.pushState(null, null, window.location.pathname);
                     }
                 };
 
                 window.addEventListener('popstate', handlePopState);
                 return () => window.removeEventListener('popstate', handlePopState);
-            }, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen]);
+            }, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen, tipoOpen]);
 
             useEffect(() => {
-                if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen) {
+                if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen || tipoOpen) {
                     history.pushState(null, null, window.location.pathname);
                 }
-            }, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen]);
+            }, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen, tipoOpen]);
 
             useEffect(() => {
-                if (cliente && !categoriaFiltro && !busqueda && productos.length > 0) {
+                if (cliente && !categoriaFiltro && !tipoFiltro && !busqueda && productos.length > 0) {
                     setShowCategoryHint(true);
                     const timer = setTimeout(() => {
                         setShowCategoryHint(false);
@@ -205,7 +244,7 @@
                 } else {
                     setShowCategoryHint(false);
                 }
-            }, [cliente, categoriaFiltro, busqueda, productos.length]);
+            }, [cliente, categoriaFiltro, tipoFiltro, busqueda, productos.length]);
 
             useEffect(() => {
                 const session = localStorage.getItem('distribuidora_session');
@@ -213,55 +252,79 @@
                 fetchData();
             }, []);
 
+            // Supabase/PostgREST limita cada consulta a un máximo de filas (por defecto 1000).
+            // Con más de 1000 productos, un simple .select() se corta ahí y deja productos
+            // afuera silenciosamente (sin lanzar error). Esta función trae TODO en tandas,
+            // usando .range(), hasta que ya no queden más filas por traer.
+            async function fetchAllRows(buildQuery, pageSize = 1000) {
+                let allRows = [];
+                let from = 0;
+                while (true) {
+                    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+                    if (error) throw error;
+                    if (!data || data.length === 0) break;
+                    allRows = allRows.concat(data);
+                    if (data.length < pageSize) break;
+                    from += pageSize;
+                }
+                return allRows;
+            }
+
             async function fetchData() {
                 if (globalCache.loaded) {
-                    const { locs, cats, prods } = globalCache.data;
+                    const { locs, cats, tips, prods } = globalCache.data;
                     setLocalidades(locs);
                     setCategorias(cats);
+                    setTipos(tips || []);
                     setProductos(prods);
                     setLoading(false);
                     return;
                 }
 
                 try {
-                    const [locsRes, catsRes, prodsRes] = await Promise.all([
-                        sb.from('localidades').select('id, nombre').order('nombre'),
-                        sb.from('categorias').select('id, nombre').order('nombre'),
-                        sb.from('promociones').select('id, nombre, precio, stock, categoria_id, imagen').order('nombre')
+                    const [locs, cats, tips, prods] = await Promise.all([
+                        fetchAllRows(() => sb.from('localidades').select('id, nombre').order('nombre')),
+                        fetchAllRows(() => sb.from('categorias').select('id, nombre').order('nombre')),
+                        fetchAllRows(() => sb.from('tipos_producto').select('id, nombre').order('nombre')),
+                        fetchAllRows(() => sb.from('promociones').select('id, nombre, precio, stock, categoria_id, tipo_id, imagen').order('nombre'))
                     ]);
 
-                    if (prodsRes.data) {
-                        globalCache.data = { locs: locsRes.data, cats: catsRes.data, prods: prodsRes.data };
-                        globalCache.loaded = true;
+                    globalCache.data = { locs, cats, tips, prods };
+                    globalCache.loaded = true;
 
-                        setLocalidades(locsRes.data);
-                        setCategorias(catsRes.data);
-                        setProductos(prodsRes.data);
+                    setLocalidades(locs);
+                    setCategorias(cats);
+                    setTipos(tips || []);
+                    setProductos(prods);
 
-                        const initialCants = {};
-                        prodsRes.data.forEach(p => initialCants[p.id] = 1);
-                        setCantidadesTemp(initialCants);
-                    }
+                    const initialCants = {};
+                    prods.forEach(p => initialCants[p.id] = 1);
+                    setCantidadesTemp(initialCants);
                 } catch (err) {
                     console.error("Error cargando datos:", err);
                 }
                 setLoading(false);
             }
 
+            const norm = (s) => (s ?? '').toString().trim().toLowerCase();
+
             const filtrados = useMemo(() => {
-                if (!categoriaFiltro && !busqueda) return [];
+                if (!categoriaFiltro && !tipoFiltro && !busqueda) return [];
                 
                 const busquedaLower = busqueda.toLowerCase();
                 
                 return productos.filter(p => {
-                    const matchCat = categoriaFiltro === 'TODOS' || 
-                                     categorias.find(c => c.id === p.categoria_id && c.nombre === categoriaFiltro);
+                    const matchCat = !categoriaFiltro || 
+                                     categorias.find(c => norm(c.id) === norm(p.categoria_id) && norm(c.nombre) === norm(categoriaFiltro));
+
+                    const matchTipo = !tipoFiltro ||
+                                     tipos.find(t => norm(t.id) === norm(p.tipo_id) && norm(t.nombre) === norm(tipoFiltro));
                     
                     const matchBus = p.nombre?.toLowerCase().includes(busquedaLower);
                     
-                    return busqueda ? matchBus : matchCat;
+                    return busqueda ? matchBus : (matchCat && matchTipo);
                 });
-            }, [productos, categorias, categoriaFiltro, busqueda]);
+            }, [productos, categorias, tipos, categoriaFiltro, tipoFiltro, busqueda]);
 
             const agregarAlCarrito = (prod) => {
                 const qtyAAgregar = cantidadesTemp[prod.id] || 1;
@@ -399,10 +462,18 @@
             };
 
             const recuperarPedido = (pedido) => {
-                const productosRecuperados = pedido.productos.map(p => ({
-                    ...p,
-                    stock: productos.find(prod => prod.id === p.id)?.stock || 0
-                }));
+                const productosRecuperados = pedido.productos.map(p => {
+                    // El stock actual en la base ya tiene descontada la cantidad
+                    // que este mismo pedido reservó. Si usamos solo ese valor como
+                    // tope, bloqueamos incorrectamente cualquier intento de subir
+                    // la cantidad de un ítem que el cliente ya tenía reservado.
+                    // Por eso sumamos de vuelta lo que este pedido ya reservó.
+                    const stockActual = productos.find(prod => prod.id === p.id)?.stock || 0;
+                    return {
+                        ...p,
+                        stock: stockActual + (p.cantidad || 0)
+                    };
+                });
                 
                 setCarrito(productosRecuperados);
                 setIdPedidoEditando(pedido.id);
@@ -413,6 +484,11 @@
 
             const confirmarPedido = async () => {
                 if (carrito.length === 0) return;
+                // Bloqueo de seguridad: evita que un doble clic/doble tap
+                // dispare la función dos veces en paralelo y duplique el pedido
+                // y el descuento de stock.
+                if (isProcessingOrder) return;
+                setIsProcessingOrder(true);
 
                 const total = carrito.reduce((acc, i) => acc + (parseFloat(i.precio) * parseInt(i.cantidad)), 0);
                 
@@ -477,15 +553,21 @@
                 } catch (error) {
                     console.error("Error al procesar el pedido:", error);
                     alert(`Hubo un error: ${error.message || 'Error desconocido'}`);
+                } finally {
+                    // Liberamos el bloqueo siempre, incluso si hubo error,
+                    // para no dejar la app trabada.
+                    setIsProcessingOrder(false);
                 }
             };
 
             if (loading) return <div className="h-screen flex items-center justify-center font-black text-blue-900 animate-pulse">CARGANDO...</div>;
 
             if (!cliente) return (
-                <div className="min-h-screen bg-blue-900 flex items-center justify-center p-6 relative">
+                <div className="min-h-screen brand-gradient flex items-center justify-center p-6 relative overflow-hidden">
+                    <div className="absolute -top-24 -right-24 w-72 h-72 bg-white/5 rounded-full blur-3xl"></div>
+                    <div className="absolute -bottom-32 -left-16 w-80 h-80 bg-sky-400/10 rounded-full blur-3xl"></div>
                     {showModalLogin && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-900/90 backdrop-blur-xl p-4">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-950/90 backdrop-blur-xl p-4">
                             <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 modal-enter shadow-2xl">
                                 <div className="text-center mb-6">
                                     <div className="text-4xl mb-2">👋</div>
@@ -497,7 +579,7 @@
                                         <button 
                                             key={p.id} 
                                             onClick={() => recuperarPedido(p)}
-                                            className="w-full bg-blue-50 border-2 border-blue-900 p-4 rounded-2xl text-left hover:bg-blue-100"
+                                            className="w-full bg-blue-50 border-2 border-blue-900 p-4 rounded-2xl text-left hover:bg-blue-100 transition-colors"
                                         >
                                             <p className="text-[10px] font-black text-blue-900/50 uppercase">
                                                 Último pedido: {new Date(p.created_at).toLocaleDateString()}
@@ -510,7 +592,7 @@
                                         localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
                                         setCarrito([]);
                                         setShowModalLogin(false);
-                                    }} className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg hover:bg-blue-800">
+                                    }} className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg shadow-blue-900/30 hover:bg-blue-800 transition-colors">
                                         Empezar Pedido Nuevo
                                     </button>
                                 </div>
@@ -530,8 +612,13 @@
 
                         try {
                             const { data, error } = await sb.from('pedidos').select('*').eq('dni', datos.dni).order('created_at', { ascending: false });
-                            if (!error && data && data.length > 0) {
-                                setPedidosRecuperables(data);
+                            // Solo ofrecemos "recuperar y editar" pedidos que NO estén
+                            // archivados. Un pedido archivado ya se considera cerrado/entregado,
+                            // y volver a editarlo dispararía otra vez la lógica de stock
+                            // sobre algo que ya debería estar resuelto.
+                            const recuperablesActivos = (data || []).filter(p => p.archivado !== true);
+                            if (!error && recuperablesActivos.length > 0) {
+                                setPedidosRecuperables(recuperablesActivos);
                                 setTempUser(datos);
                                 setShowModalLogin(true);
                             } else {
@@ -542,15 +629,15 @@
                             setCliente(datos);
                             localStorage.setItem('distribuidora_session', JSON.stringify(datos));
                         }
-                    }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl">
+                    }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl relative z-10 page-fade">
                         <img src={LOGO_URL} className="w-40 mb-6" alt="Logo" />
-                        <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
-                        <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 p-4 mb-3 rounded-2xl outline-none focus:border-blue-900" required />
-                        <select name="localidad" className="w-full bg-gray-50 border-2 p-4 mb-6 rounded-2xl outline-none focus:border-blue-900" required>
+                        <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-3 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required />
+                        <input name="dni" type="number" placeholder="DNI" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-3 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required />
+                        <select name="localidad" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-6 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required>
                             <option value="">Tu Localidad</option>
                             {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                         </select>
-                        <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform hover:bg-blue-800">
+                        <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-blue-900/30 hover:bg-blue-800">
                             Ingresar
                         </button>
                     </form>
@@ -559,7 +646,7 @@
 
             return (
                 <div className="min-h-screen flex flex-col pb-24">
-                    <header className="bg-white p-3 shadow-sm sticky top-0 z-40">
+                    <header className="bg-white/95 backdrop-blur-sm p-3 shadow-sm sticky top-0 z-40 border-b border-gray-100">
                         <div className="max-w-2xl mx-auto flex items-center justify-between">
                             <div className="flex flex-col">
                                 <img src={LOGO_URL} className="h-12 object-contain self-start mb-1" alt="Logo" />
@@ -583,7 +670,7 @@
                                         setMisPedidos(data || []);
                                         setShowHistorial(true);
                                     }}
-                                    className="text-[14px] font-black text-blue-900 bg-blue-50 px-4 py-2 rounded-xl uppercase border border-blue-100 active:bg-blue-100 hover:bg-blue-100"
+                                    className="text-[14px] font-black text-blue-900 bg-blue-50 px-4 py-2 rounded-xl uppercase border border-blue-100 active:bg-blue-100 hover:bg-blue-100 transition-colors"
                                 >
                                     📋 Historial
                                 </button>
@@ -598,7 +685,7 @@
                             
                             <button 
                                 onClick={() => {localStorage.clear(); location.reload();}} 
-                                className="text-[14px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100 hover:bg-red-100"
+                                className="text-[14px] font-black text-red-500 bg-red-50 px-4 py-2 rounded-xl uppercase border border-red-100 active:bg-red-100 hover:bg-red-100 transition-colors"
                             >
                                 Salir
                             </button>
@@ -608,62 +695,106 @@
                             <input 
                                 type="text" 
                                 placeholder="🔎 Buscar productos..." 
-                                className="w-full bg-gray-100 p-3 rounded-xl outline-none text-xs border-2 border-transparent focus:border-blue-900 transition-all" 
+                                className="w-full bg-gray-100 p-3 rounded-xl outline-none text-xs border-2 border-transparent focus:border-blue-900 focus:bg-white transition-all" 
                                 onChange={(e) => setBusqueda(e.target.value)} 
                             />
                         </div>
                     </header>
+                    <div className="accent-line"></div>
 
                     <main className="p-4 flex-grow max-w-2xl mx-auto w-full">
-                        <div className="relative mb-6">
+                        <div className="relative mb-6 grid grid-cols-2 gap-3">
                             {showCategoryHint && (
                                 <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-50 text-center w-full hint-animate pointer-events-none">
                                     <div className="flex flex-col items-center">
                                         <p className="bg-blue-900 text-white px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest shadow-2xl border-2 border-white mb-1">
-                                            ¡Selecciona una categoría!
+                                            ¡Elegí categoría o tipo!
                                         </p>
                                         <span className="text-4xl hand-animate inline-block">👇</span>
                                     </div>
                                 </div>
                             )}
 
-                            <button 
-                                onClick={() => {
-                                    setCatOpen(!catOpen);
-                                    setShowCategoryHint(false);
-                                }} 
-                                className="w-full bg-white p-5 rounded-2xl border-2 border-white shadow-sm flex justify-between items-center font-black text-blue-900 uppercase text-[14px] active:scale-95 transition-transform"
-                            >
-                                <span>📦 {categoriaFiltro || 'SELECCIONAR'}</span>
-                                <span className={`transition-transform duration-300 ${catOpen ? 'rotate-180' : ''}`}>▼</span>
-                            </button>
+                            <div className="relative">
+                                <button 
+                                    onClick={() => {
+                                        setCatOpen(!catOpen);
+                                        setTipoOpen(false);
+                                        setShowCategoryHint(false);
+                                    }} 
+                                    className={`w-full bg-white p-4 rounded-2xl border-2 shadow-sm flex flex-col items-start gap-0.5 font-black uppercase text-left active:scale-95 transition-all ${categoriaFiltro ? 'border-blue-900 ring-2 ring-blue-900/10' : 'border-white'}`}
+                                >
+                                    <span className="text-[9px] text-gray-400 font-bold tracking-widest">Categoría</span>
+                                    <span className="flex w-full justify-between items-center text-blue-900 text-[13px] leading-tight">
+                                        <span className="truncate pr-1">📦 {categoriaFiltro || 'Sin selección'}</span>
+                                        <span className={`transition-transform duration-300 shrink-0 ${catOpen ? 'rotate-180' : ''}`}>▼</span>
+                                    </span>
+                                </button>
 
-                            {catOpen && (
-                                <div className="absolute w-full mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden modal-enter z-40">
-                                    <button 
-                                        onClick={() => { setCategoriaFiltro('TODOS'); setCatOpen(false); }} 
-                                        className="w-full p-4 text-left border-b hover:bg-gray-50 font-bold text-xs text-gray-400 uppercase"
-                                    >
-                                        Mostrar Todo
-                                    </button>
-                                    {categorias.map(c => (
+                                {catOpen && (
+                                    <div className="absolute w-full mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden modal-enter z-40 max-h-64 overflow-y-auto no-scrollbar">
                                         <button 
-                                            key={c.id} 
-                                            onClick={() => { setCategoriaFiltro(c.nombre); setCatOpen(false); }} 
-                                            className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase active:bg-blue-50 hover:bg-blue-50"
+                                            onClick={() => { setCategoriaFiltro(null); setCatOpen(false); }} 
+                                            className="w-full p-4 text-left border-b hover:bg-gray-50 font-bold text-xs text-gray-400 uppercase"
                                         >
-                                            {c.nombre}
+                                            Sin selección
                                         </button>
-                                    ))}
-                                </div>
-                            )}
+                                        {categorias.map(c => (
+                                            <button 
+                                                key={c.id} 
+                                                onClick={() => { setCategoriaFiltro(c.nombre); setTipoFiltro(null); setCatOpen(false); }} 
+                                                className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase active:bg-blue-50 hover:bg-blue-50"
+                                            >
+                                                {c.nombre}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="relative">
+                                <button 
+                                    onClick={() => {
+                                        setTipoOpen(!tipoOpen);
+                                        setCatOpen(false);
+                                        setShowCategoryHint(false);
+                                    }} 
+                                    className={`w-full bg-white p-4 rounded-2xl border-2 shadow-sm flex flex-col items-start gap-0.5 font-black uppercase text-left active:scale-95 transition-all ${tipoFiltro ? 'border-blue-900 ring-2 ring-blue-900/10' : 'border-white'}`}
+                                >
+                                    <span className="text-[9px] text-gray-400 font-bold tracking-widest">Tipo</span>
+                                    <span className="flex w-full justify-between items-center text-blue-900 text-[13px] leading-tight">
+                                        <span className="truncate pr-1">🏷️ {tipoFiltro || 'Sin selección'}</span>
+                                        <span className={`transition-transform duration-300 shrink-0 ${tipoOpen ? 'rotate-180' : ''}`}>▼</span>
+                                    </span>
+                                </button>
+
+                                {tipoOpen && (
+                                    <div className="absolute w-full mt-2 bg-white rounded-2xl shadow-xl border overflow-hidden modal-enter z-40 max-h-64 overflow-y-auto no-scrollbar">
+                                        <button 
+                                            onClick={() => { setTipoFiltro(null); setTipoOpen(false); }} 
+                                            className="w-full p-4 text-left border-b hover:bg-gray-50 font-bold text-xs text-gray-400 uppercase"
+                                        >
+                                            Sin selección
+                                        </button>
+                                        {tipos.map(t => (
+                                            <button 
+                                                key={t.id} 
+                                                onClick={() => { setTipoFiltro(t.nombre); setCategoriaFiltro(null); setTipoOpen(false); }} 
+                                                className="w-full p-4 text-left border-b font-black text-xs text-blue-900 uppercase active:bg-blue-50 hover:bg-blue-50"
+                                            >
+                                                {t.nombre}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-1 gap-4">
                             {filtrados.length === 0 && !loading && (
                                 <div className="text-center py-20 bg-gray-50/50 rounded-[3rem] border-2 border-dashed border-gray-200">
                                     <p className="text-gray-400 font-black uppercase tracking-widest text-sm px-10">
-                                        {busqueda || categoriaFiltro ? "No hay productos" : "Selecciona una categoría"}
+                                        {busqueda || categoriaFiltro || tipoFiltro ? "No hay productos" : "Selecciona una categoría o tipo"}
                                     </p>
                                 </div>
                             )}
@@ -675,10 +806,10 @@
                                 const stockLabel = p.stock > 0 ? `${p.stock} unidades` : 'Sin stock';
 
                                 return (
-                                    <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all active:scale-95">
+                                    <div key={p.id} className="bg-white p-4 rounded-[2rem] shadow-sm hover:shadow-lg border border-gray-100 flex gap-4 items-center relative overflow-hidden transition-all duration-300 active:scale-95">
                                         <div 
                                             onClick={() => ampliarImagen(`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`)}
-                                            className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-opacity hover:shadow-md"
+                                            className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-2xl p-2 flex items-center justify-center cursor-zoom-in active:opacity-70 transition-all hover:shadow-md hover:bg-gray-100"
                                         >
                                             <img 
                                                 src={`${SUPABASE_URL}/storage/v1/object/public/promo_images/${p.imagen}`} 
@@ -703,14 +834,14 @@
 
                                             <div className="flex items-center gap-2">
                                                 <div className="flex items-center bg-gray-100 rounded-lg p-0.5 border">
-                                                    <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900 hover:bg-gray-200 rounded">−</button>
+                                                    <button onClick={() => updateTempCant(p.id, -1, p.stock)} className="w-7 h-7 font-black text-blue-900 hover:bg-gray-200 rounded transition-colors">−</button>
                                                     <span className="w-6 text-center text-xs font-black">{cantidadesTemp[p.id] || 1}</span>
-                                                    <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900 hover:bg-gray-200 rounded">+</button>
+                                                    <button onClick={() => updateTempCant(p.id, 1, p.stock)} className="w-7 h-7 font-black text-blue-900 hover:bg-gray-200 rounded transition-colors">+</button>
                                                 </div>
                                                 <button 
                                                     onClick={() => agregarAlCarrito(p)} 
                                                     disabled={p.stock <= 0}
-                                                    className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:scale-95 hover:bg-blue-800"
+                                                    className="flex-1 bg-blue-900 text-white py-2 rounded-lg font-black text-[9px] uppercase tracking-tighter disabled:bg-gray-300 transition-all active:scale-95 hover:bg-blue-800 shadow-sm shadow-blue-900/20"
                                                 >
                                                     {p.stock > 0 ? 'Agregar' : 'Agotado'}
                                                 </button>
@@ -757,7 +888,7 @@
                     <div className="fixed bottom-6 right-6 z-50">
                         <button 
                             onClick={() => setShowCart(true)} 
-                            className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl flex items-center justify-center border-4 border-white transition-all ${cartAnimating ? 'animate-pop' : ''} hover:bg-blue-800`}
+                            className={`w-16 h-16 rounded-full bg-blue-900 shadow-2xl shadow-blue-900/40 flex items-center justify-center border-4 border-white transition-all duration-300 ${cartAnimating ? 'animate-pop' : ''} hover:bg-blue-800 hover:scale-105`}
                         >
                             <span className="text-2xl">🛒</span>
                             {carrito.length > 0 && (
@@ -774,7 +905,7 @@
                                 
                                 <button 
                                     onClick={() => setShowCart(false)}
-                                    className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 hover:bg-gray-200"
+                                    className="mb-4 self-center bg-gray-100 text-gray-500 px-6 py-2 rounded-full font-black text-[15px] uppercase tracking-widest border border-gray-200 active:scale-95 hover:bg-gray-200 transition-colors"
                                 >
                                     ↑ Seguir agregando
                                 </button>
@@ -789,16 +920,16 @@
                                         <p className="text-center py-10 text-gray-400 font-bold">Tu carrito está vacío</p>
                                     ) : (
                                         carrito.map(item => (
-                                            <div key={item.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md">
+                                            <div key={item.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md transition-shadow">
                                                 <div className="flex-1">
                                                     <p className="text-[15px] font-black uppercase text-gray-700 leading-tight mb-1">{item.nombre}</p>
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex items-center bg-white rounded-lg border shadow-sm">
-                                                            <button onClick={() => modificarCantidadCarrito(item.id, -1)} className="w-8 h-8 text-blue-900 font-black hover:bg-gray-100">−</button>
+                                                            <button onClick={() => modificarCantidadCarrito(item.id, -1)} className="w-8 h-8 text-blue-900 font-black hover:bg-gray-100 transition-colors">−</button>
                                                             <span className="w-8 text-center text-xs font-black">{item.cantidad}</span>
-                                                            <button onClick={() => modificarCantidadCarrito(item.id, 1)} className="w-8 h-8 text-blue-900 font-black hover:bg-gray-100">+</button>
+                                                            <button onClick={() => modificarCantidadCarrito(item.id, 1)} className="w-8 h-8 text-blue-900 font-black hover:bg-gray-100 transition-colors">+</button>
                                                         </div>
-                                                        <button onClick={() => eliminarDelCarrito(item.id)} className="text-red-400 text-[15px] font-bold uppercase underline hover:text-red-600">Eliminar</button>
+                                                        <button onClick={() => eliminarDelCarrito(item.id)} className="text-red-400 text-[15px] font-bold uppercase underline hover:text-red-600 transition-colors">Eliminar</button>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
@@ -820,10 +951,10 @@
                                     
                                     <button 
                                         onClick={confirmarPedido} 
-                                        disabled={carrito.length === 0}
-                                        className="w-full bg-green-600 text-white py-6 rounded-2xl font-black uppercase shadow-xl active:scale-[0.98] transition-transform disabled:bg-gray-300 hover:bg-green-700"
+                                        disabled={carrito.length === 0 || isProcessingOrder}
+                                        className="w-full bg-green-600 text-white py-6 rounded-2xl font-black uppercase shadow-xl shadow-green-600/20 active:scale-[0.98] transition-transform disabled:bg-gray-300 hover:bg-green-700"
                                     >
-                                        Confirmar y Descargar PDF
+                                        {isProcessingOrder ? 'Procesando...' : 'Confirmar y Descargar PDF'}
                                     </button>
                                 </div>
                             </div>
@@ -847,10 +978,10 @@
 
                     {showHistorial && (
                         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-white w-full max-w-md max-h-[80vh] rounded-[2rem] p-6 flex flex-col shadow-2xl">
+                            <div className="bg-white w-full max-w-md max-h-[80vh] rounded-[2rem] p-6 flex flex-col shadow-2xl modal-enter">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-xl font-black text-blue-900 uppercase">Mis Pedidos</h2>
-                                    <button onClick={() => setShowHistorial(false)} className="text-gray-400 font-bold hover:text-gray-600">✕</button>
+                                    <button onClick={() => setShowHistorial(false)} className="text-gray-400 font-bold hover:text-gray-600 transition-colors">✕</button>
                                 </div>
                                 
                                 <div className="overflow-y-auto space-y-3 no-scrollbar">
@@ -863,7 +994,7 @@
                                             const { total, pagado, saldo, estado } = calcularEstadoPedido(p);
 
                                             return (
-                                                <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md">
+                                                <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md transition-shadow">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div>
                                                             <p className="text-[10px] font-black text-gray-400 uppercase">

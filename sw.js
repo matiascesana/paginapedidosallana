@@ -2,7 +2,7 @@
 // considere la app instalable y para que abra rápido en visitas repetidas.
 // Las novedades siempre se piden frescas a Supabase (no se cachean acá),
 // así el cliente nunca ve un feed viejo por culpa del caché.
-const CACHE_NAME = 'novedades-allana-v1';
+const CACHE_NAME = 'novedades-allana-v2';
 const APP_SHELL = [
   './comunicaciones.html',
   './manifest.json',

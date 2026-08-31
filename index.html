@@ -124,10 +124,9 @@
             const [cantidadesTemp, setCantidadesTemp] = useState({});
             const [showHistorial, setShowHistorial] = useState(false);
             const [misPedidos, setMisPedidos] = useState([]);
-            const [pedidosRecuperables, setPedidosRecuperables] = useState([]);
-            const [showModalLogin, setShowModalLogin] = useState(false);
-            const [tempUser, setTempUser] = useState(null);
             const [showCategoryHint, setShowCategoryHint] = useState(false);
+            // Pedido cuyo detalle se está mostrando en el modal del historial
+            const [detallePedido, setDetallePedido] = useState(null);
             const [idPedidoEditando, setIdPedidoEditando] = useState(null);
             const [imgAmpliada, setImgAmpliada] = useState(null);
             const [cartAnimating, setCartAnimating] = useState(false);
@@ -213,11 +212,11 @@
 
             useEffect(() => {
                 const handlePopState = (e) => {
-                    if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen || tipoOpen) {
+                    if (showCart || showHistorial || imgAmpliada || detallePedido || catOpen || tipoOpen) {
                         setShowCart(false);
                         setShowHistorial(false);
                         setImgAmpliada(null);
-                        setShowModalLogin(false);
+                        setDetallePedido(null);
                         setCatOpen(false);
                         setTipoOpen(false);
                         history.pushState(null, null, window.location.pathname);
@@ -226,13 +225,13 @@
 
                 window.addEventListener('popstate', handlePopState);
                 return () => window.removeEventListener('popstate', handlePopState);
-            }, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen, tipoOpen]);
+            }, [showCart, showHistorial, imgAmpliada, detallePedido, catOpen, tipoOpen]);
 
             useEffect(() => {
-                if (showCart || showHistorial || imgAmpliada || showModalLogin || catOpen || tipoOpen) {
+                if (showCart || showHistorial || imgAmpliada || detallePedido || catOpen || tipoOpen) {
                     history.pushState(null, null, window.location.pathname);
                 }
-            }, [showCart, showHistorial, imgAmpliada, showModalLogin, catOpen, tipoOpen]);
+            }, [showCart, showHistorial, imgAmpliada, detallePedido, catOpen, tipoOpen]);
 
             useEffect(() => {
                 if (cliente && !categoriaFiltro && !tipoFiltro && !busqueda && productos.length > 0) {
@@ -248,9 +247,35 @@
 
             useEffect(() => {
                 const session = localStorage.getItem('distribuidora_session');
-                if (session) setCliente(JSON.parse(session));
+                if (session) {
+                    const datosSesion = JSON.parse(session);
+                    setCliente(datosSesion);
+                    fetchMisPedidos(datosSesion.dni);
+                }
                 fetchData();
             }, []);
+
+            // Trae SIEMPRE todos los pedidos del cliente (activos y archivados),
+            // para que el historial y el saldo pendiente estén completos apenas
+            // entra, sin depender de que abra el modal de Historial primero.
+            async function fetchMisPedidos(dni) {
+                try {
+                    const { data, error } = await sb.from('pedidos')
+                        .select('*')
+                        .eq('dni', dni)
+                        .order('created_at', { ascending: false });
+                    if (error) throw error;
+                    setMisPedidos(data || []);
+                } catch (err) {
+                    console.error("Error cargando historial de pedidos:", err);
+                }
+            }
+
+            // Un pedido solo se puede retomar/editar si todavía no fue marcado
+            // como preparado ni como entregado en el panel administrativo.
+            // Una vez que cualquiera de esas dos marcas está puesta, el pedido
+            // queda bloqueado para el cliente (aunque no esté archivado).
+            const esPedidoEditable = (p) => !p.preparado && p.estado !== 'entregado';
 
             // Supabase/PostgREST limita cada consulta a un máximo de filas (por defecto 1000).
             // Con más de 1000 productos, un simple .select() se corta ahí y deja productos
@@ -461,25 +486,61 @@
                 setCarrito(prev => prev.filter(item => item.id !== id));
             };
 
-            const recuperarPedido = (pedido) => {
+            // Carga un pedido existente (desde el Historial) al carrito para poder
+            // editarlo: cambiar cantidades, quitar ítems o agregar productos nuevos.
+            // Solo se llama para pedidos donde esPedidoEditable(pedido) === true.
+            const editarPedidoDesdeHistorial = (pedido) => {
+                if (!esPedidoEditable(pedido)) {
+                    alert("Este pedido ya fue preparado y/o entregado, no se puede modificar.");
+                    return;
+                }
+
+                if (carrito.length > 0 && !idPedidoEditando) {
+                    const seguro = confirm("Tenés productos sin confirmar en tu carrito actual. Si continuás, se reemplazarán por los de este pedido. ¿Deseás continuar?");
+                    if (!seguro) return;
+                }
+
                 const productosRecuperados = pedido.productos.map(p => {
                     // El stock actual en la base ya tiene descontada la cantidad
                     // que este mismo pedido reservó. Si usamos solo ese valor como
                     // tope, bloqueamos incorrectamente cualquier intento de subir
                     // la cantidad de un ítem que el cliente ya tenía reservado.
                     // Por eso sumamos de vuelta lo que este pedido ya reservó.
-                    const stockActual = productos.find(prod => prod.id === p.id)?.stock || 0;
+                    const prodActual = productos.find(prod => prod.id === p.id);
+                    const stockActual = prodActual?.stock ?? 0;
                     return {
                         ...p,
+                        // Si el producto fue eliminado del catálogo, igual lo dejamos
+                        // ver con su cantidad reservada como tope, para no romper la edición.
                         stock: stockActual + (p.cantidad || 0)
                     };
                 });
-                
+
                 setCarrito(productosRecuperados);
                 setIdPedidoEditando(pedido.id);
-                setCliente(tempUser);
-                localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
-                setShowModalLogin(false);
+                setDetallePedido(null);
+                setShowHistorial(false);
+                setShowCart(true);
+            };
+
+            // Cancela la edición en curso: descarta los cambios locales (nada se
+            // llegó a guardar en la base todavía) y vuelve al estado de carrito vacío.
+            const cancelarEdicionPedido = () => {
+                const seguro = confirm("¿Descartar los cambios y cancelar la edición de este pedido?");
+                if (!seguro) return;
+                setCarrito([]);
+                setIdPedidoEditando(null);
+            };
+
+            // Vuelve a generar y descargar el PDF de un pedido ya realizado
+            // (activo o archivado), usando los ítems y el total guardados en ese momento.
+            const descargarPdfPedido = (pedido) => {
+                const items = (pedido.productos || []).map(p => ({
+                    nombre: p.nombre,
+                    cantidad: p.cantidad,
+                    precio: parseFloat(p.precio) || 0
+                }));
+                generarPDF(items, parseFloat(pedido.total) || 0);
             };
 
             const confirmarPedido = async () => {
@@ -543,12 +604,7 @@
                     setShowCart(false);
                     
                     fetchData();
-                    
-                    const { data: nuevosPedidos } = await sb.from('pedidos')
-                        .select('*')
-                        .eq('dni', cliente.dni)
-                        .order('created_at', { ascending: false });
-                    if (nuevosPedidos) setMisPedidos(nuevosPedidos);
+                    await fetchMisPedidos(cliente.dni);
 
                 } catch (error) {
                     console.error("Error al procesar el pedido:", error);
@@ -566,40 +622,6 @@
                 <div className="min-h-screen brand-gradient flex items-center justify-center p-6 relative overflow-hidden">
                     <div className="absolute -top-24 -right-24 w-72 h-72 bg-white/5 rounded-full blur-3xl"></div>
                     <div className="absolute -bottom-32 -left-16 w-80 h-80 bg-sky-400/10 rounded-full blur-3xl"></div>
-                    {showModalLogin && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-950/90 backdrop-blur-xl p-4">
-                            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 modal-enter shadow-2xl">
-                                <div className="text-center mb-6">
-                                    <div className="text-4xl mb-2">👋</div>
-                                    <h2 className="text-2xl font-black text-blue-900 uppercase leading-tight">¡Hola de nuevo!</h2>
-                                    <p className="text-gray-400 text-sm font-bold mt-1">¿Qué deseas hacer hoy?</p>
-                                </div>
-                                <div className="space-y-3 mb-6">
-                                    {pedidosRecuperables.slice(0, 1).map(p => (
-                                        <button 
-                                            key={p.id} 
-                                            onClick={() => recuperarPedido(p)}
-                                            className="w-full bg-blue-50 border-2 border-blue-900 p-4 rounded-2xl text-left hover:bg-blue-100 transition-colors"
-                                        >
-                                            <p className="text-[10px] font-black text-blue-900/50 uppercase">
-                                                Último pedido: {new Date(p.created_at).toLocaleDateString()}
-                                            </p>
-                                            <span className="font-black text-blue-900 text-sm italic">RECUPERAR Y EDITAR ESTE PEDIDO</span>
-                                        </button>
-                                    ))}
-                                    <button onClick={() => {
-                                        setCliente(tempUser);
-                                        localStorage.setItem('distribuidora_session', JSON.stringify(tempUser));
-                                        setCarrito([]);
-                                        setShowModalLogin(false);
-                                    }} className="w-full bg-blue-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg shadow-blue-900/30 hover:bg-blue-800 transition-colors">
-                                        Empezar Pedido Nuevo
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     <form onSubmit={async (e) => {
                         e.preventDefault();
                         const form = e.target;
@@ -610,25 +632,13 @@
                             localidad_nombre: form.localidad.options[form.localidad.selectedIndex].text
                         };
 
-                        try {
-                            const { data, error } = await sb.from('pedidos').select('*').eq('dni', datos.dni).order('created_at', { ascending: false });
-                            // Solo ofrecemos "recuperar y editar" pedidos que NO estén
-                            // archivados. Un pedido archivado ya se considera cerrado/entregado,
-                            // y volver a editarlo dispararía otra vez la lógica de stock
-                            // sobre algo que ya debería estar resuelto.
-                            const recuperablesActivos = (data || []).filter(p => p.archivado !== true);
-                            if (!error && recuperablesActivos.length > 0) {
-                                setPedidosRecuperables(recuperablesActivos);
-                                setTempUser(datos);
-                                setShowModalLogin(true);
-                            } else {
-                                setCliente(datos);
-                                localStorage.setItem('distribuidora_session', JSON.stringify(datos));
-                            }
-                        } catch (err) {
-                            setCliente(datos);
-                            localStorage.setItem('distribuidora_session', JSON.stringify(datos));
-                        }
+                        // El cliente entra directo: ya no se le ofrece "recuperar" un
+                        // pedido al loguearse. Sus pedidos anteriores (y la posibilidad
+                        // de editar los que sigan pendientes) se ven ahora desde el
+                        // Historial, una vez adentro.
+                        setCliente(datos);
+                        localStorage.setItem('distribuidora_session', JSON.stringify(datos));
+                        fetchMisPedidos(datos.dni);
                     }} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm flex flex-col items-center shadow-2xl relative z-10 page-fade">
                         <img src={LOGO_URL} className="w-40 mb-6" alt="Logo" />
                         <input name="nombre" placeholder="Nombre Completo" className="w-full bg-gray-50 border-2 border-transparent p-4 mb-3 rounded-2xl outline-none focus:border-blue-900 focus:bg-white transition-colors" required />
@@ -663,11 +673,7 @@
                             <div className="flex flex-col items-end gap-1">
                                 <button 
                                     onClick={async () => {
-                                        const { data } = await sb.from('pedidos')
-                                            .select('*')
-                                            .eq('dni', cliente.dni)
-                                            .order('created_at', { ascending: false });
-                                        setMisPedidos(data || []);
+                                        await fetchMisPedidos(cliente.dni);
                                         setShowHistorial(true);
                                     }}
                                     className="text-[14px] font-black text-blue-900 bg-blue-50 px-4 py-2 rounded-xl uppercase border border-blue-100 active:bg-blue-100 hover:bg-blue-100 transition-colors"
@@ -910,10 +916,18 @@
                                     ↑ Seguir agregando
                                 </button>
 
-                                <h2 className="text-2xl font-black text-blue-900 mb-6 uppercase flex justify-between items-center">
-                                    Tu Pedido
+                                <h2 className="text-2xl font-black text-blue-900 mb-1 uppercase flex justify-between items-center">
+                                    {idPedidoEditando ? `Editando Pedido #${idPedidoEditando}` : 'Tu Pedido'}
                                     <span className="text-xs bg-blue-100 text-blue-900 px-3 py-1 rounded-full">{carrito.length} Items</span>
                                 </h2>
+                                {idPedidoEditando && (
+                                    <button
+                                        onClick={cancelarEdicionPedido}
+                                        className="self-start mb-4 text-[11px] font-black text-red-500 underline uppercase hover:text-red-700 transition-colors"
+                                    >
+                                        Cancelar edición
+                                    </button>
+                                )}
 
                                 <div className="flex-grow overflow-y-auto space-y-4 mb-6 no-scrollbar">
                                     {carrito.length === 0 ? (
@@ -954,7 +968,7 @@
                                         disabled={carrito.length === 0 || isProcessingOrder}
                                         className="w-full bg-green-600 text-white py-6 rounded-2xl font-black uppercase shadow-xl shadow-green-600/20 active:scale-[0.98] transition-transform disabled:bg-gray-300 hover:bg-green-700"
                                     >
-                                        {isProcessingOrder ? 'Procesando...' : 'Confirmar y Descargar PDF'}
+                                        {isProcessingOrder ? 'Procesando...' : (idPedidoEditando ? 'Guardar Cambios y Descargar PDF' : 'Confirmar y Descargar PDF')}
                                     </button>
                                 </div>
                             </div>
@@ -991,7 +1005,8 @@
                                         </p>
                                     ) : (
                                         misPedidos.map(p => {
-                                            const { total, pagado, saldo, estado } = calcularEstadoPedido(p);
+                                            const { total, pagado, saldo, estado: estadoPago } = calcularEstadoPedido(p);
+                                            const editable = esPedidoEditable(p);
 
                                             return (
                                                 <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 hover:shadow-md transition-shadow">
@@ -1002,16 +1017,107 @@
                                                             </p>
                                                             <p className="text-[13px] font-black text-blue-900">Pedido #{p.id}</p>
                                                         </div>
-                                                        <span className={`text-[10px] font-black px-2 py-1 rounded ${estado === 'pagado' ? 'bg-green-100 text-green-700' : estado === 'parcial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                                                            {estado.toUpperCase()}
+                                                        <span className={`text-[10px] font-black px-2 py-1 rounded ${estadoPago === 'pagado' ? 'bg-green-100 text-green-700' : estadoPago === 'parcial' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                                            {estadoPago.toUpperCase()}
                                                         </span>
                                                     </div>
-                                                    <p className="text-[11px] text-gray-600 mb-2">
+
+                                                    <div className="flex flex-wrap gap-1 mb-2">
+                                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${p.preparado ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'}`}>
+                                                            {p.preparado ? '✅ Preparado' : '🕓 Sin preparar'}
+                                                        </span>
+                                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${p.estado === 'entregado' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'}`}>
+                                                            {p.estado === 'entregado' ? '📦 Entregado' : '⏳ No entregado'}
+                                                        </span>
+                                                        {p.archivado && (
+                                                            <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase bg-gray-200 text-gray-500">🗂️ Archivado</span>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-[11px] text-gray-600 mb-3">
                                                         Total: ${total.toLocaleString('es-AR')} | Pagado: ${pagado.toLocaleString('es-AR')} | Saldo: ${saldo.toLocaleString('es-AR')}
                                                     </p>
+
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            onClick={() => setDetallePedido(p)}
+                                                            className="text-[10px] font-black uppercase px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+                                                        >
+                                                            👁️ Ver detalle
+                                                        </button>
+                                                        <button
+                                                            onClick={() => descargarPdfPedido(p)}
+                                                            className="text-[10px] font-black uppercase px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+                                                        >
+                                                            📄 PDF
+                                                        </button>
+                                                        {editable ? (
+                                                            <button
+                                                                onClick={() => editarPedidoDesdeHistorial(p)}
+                                                                className="text-[10px] font-black uppercase px-3 py-2 rounded-lg bg-blue-900 text-white hover:bg-blue-800 transition-colors"
+                                                            >
+                                                                ✏️ Editar pedido
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-[10px] font-black uppercase px-3 py-2 rounded-lg bg-gray-100 text-gray-400">
+                                                                🔒 Ya no editable
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             );
                                         })
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {detallePedido && (
+                        <div className="fixed inset-0 bg-black/70 z-[80] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setDetallePedido(null)}>
+                            <div className="bg-white w-full max-w-md max-h-[85vh] rounded-[2rem] p-6 flex flex-col shadow-2xl modal-enter" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-black text-blue-900 uppercase">Pedido #{detallePedido.id}</h2>
+                                    <button onClick={() => setDetallePedido(null)} className="text-gray-400 font-bold hover:text-gray-600 transition-colors">✕</button>
+                                </div>
+
+                                <p className="text-[11px] text-gray-400 font-bold uppercase mb-3">
+                                    {new Date(detallePedido.created_at).toLocaleDateString()}
+                                </p>
+
+                                <div className="overflow-y-auto space-y-2 no-scrollbar flex-grow mb-4">
+                                    {(detallePedido.productos || []).map((item, idx) => (
+                                        <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                            <div>
+                                                <p className="text-[13px] font-black uppercase text-gray-700 leading-tight">{item.nombre}</p>
+                                                <p className="text-[10px] text-gray-400 font-bold">Cant: {item.cantidad} x ${parseFloat(item.precio).toLocaleString('es-AR')}</p>
+                                            </div>
+                                            <p className="font-black text-blue-900">${(item.cantidad * item.precio).toLocaleString('es-AR')}</p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="border-t pt-4 mb-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-400 font-black uppercase text-[10px]">Total</span>
+                                        <span className="text-2xl font-black text-blue-900">${(parseFloat(detallePedido.total) || 0).toLocaleString('es-AR')}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => descargarPdfPedido(detallePedido)}
+                                        className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-black uppercase text-xs border border-gray-200 hover:bg-gray-200 transition-colors"
+                                    >
+                                        📄 Descargar PDF
+                                    </button>
+                                    {esPedidoEditable(detallePedido) && (
+                                        <button
+                                            onClick={() => editarPedidoDesdeHistorial(detallePedido)}
+                                            className="flex-1 bg-blue-900 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-800 transition-colors"
+                                        >
+                                            ✏️ Editar
+                                        </button>
                                     )}
                                 </div>
                             </div>

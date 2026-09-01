@@ -327,9 +327,19 @@
                                                             onAmpliar={setImagenAmpliada}
                                                         />
                                                     )}
-                                                    <p className="text-[10px] text-gray-300 font-bold mt-3">
-                                                        {new Date(n.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                                                    </p>
+                                                    <div className="flex justify-between items-center mt-3">
+                                                        <p className="text-[10px] text-gray-300 font-bold">
+                                                            {new Date(n.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                                                        </p>
+                                                        <a
+                                                            href={`https://wa.me/5493854784659?text=${encodeURIComponent(`Hola! Quiero más información sobre: ${n.titulo || 'esta novedad'}`)}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center gap-1 text-[11px] font-black text-white bg-green-500 px-3 py-2 rounded-xl uppercase hover:bg-green-600 transition-colors"
+                                                        >
+                                                            💬 WhatsApp
+                                                        </a>
+                                                    </div>
                                                 </div>
                                             );
                                         })}
@@ -347,7 +357,7 @@
                                     <button onClick={() => setShowPdf(false)} className="text-white font-black bg-white/15 px-3 py-1.5 rounded-lg text-xs">Cerrar ✕</button>
                                 </div>
                                 <iframe
-                                    title="Boletín mensual"
+                                    title="Catálogo mensual de Promociones"
                                     className="flex-grow w-full"
                                     src={`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(boletin.pdf_url + '?v=' + new Date(boletin.updated_at).getTime())}`}
                                 ></iframe>
